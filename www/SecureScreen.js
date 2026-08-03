@@ -51,7 +51,7 @@ enableScreenRecordingProtection: function (success, error) {
 },
 
 disableScreenRecordingProtection: function (success, error) {
-    exec(success, error, 'disableScreenRecordingProtection', []);
+exec(success, error, 'SecureScreen', 'disableScreenRecordingProtection', []);
 }
     
 };
