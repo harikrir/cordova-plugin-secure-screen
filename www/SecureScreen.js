@@ -1,1 +1,46 @@
-var exec=require('cordova/exec');module.exports={enableScreenshotProtection:function(s,e){exec(s,e,'SecureScreen','enableScreenshotProtection',[]);},disableScreenshotProtection:function(s,e){exec(s,e,'SecureScreen','disableScreenshotProtection',[]);},enableAppSwitcherBlur:function(s,e){exec(s,e,'SecureScreen','enableAppSwitcherBlur',[]);},disableAppSwitcherBlur:function(s,e){exec(s,e,'SecureScreen','disableAppSwitcherBlur',[]);}};
+var exec = require('cordova/exec');
+
+var SecureScreen = {
+
+    enableScreenshotProtection: function (success, error) {
+        exec(
+            success,
+            error,
+            'SecureScreen',
+            'enableScreenshotProtection',
+            []
+        );
+    },
+
+    disableScreenshotProtection: function (success, error) {
+        exec(
+            success,
+            error,
+            'SecureScreen',
+            'disableScreenshotProtection',
+            []
+        );
+    },
+
+    enableAppSwitcherBlur: function (success, error) {
+        exec(
+            success,
+            error,
+            'SecureScreen',
+            'enableAppSwitcherBlur',
+            []
+        );
+    },
+
+    disableAppSwitcherBlur: function (success, error) {
+        exec(
+            success,
+            error,
+            'SecureScreen',
+            'disableAppSwitcherBlur',
+            []
+        );
+    }
+};
+
+module.exports = SecureScreen;
