@@ -1,0 +1,24 @@
+{
+  "name": "cordova-plugin-secure-screen",
+  "version": "1.0.0",
+  "description": "Screenshot protection and App Switcher blur for Cordova",
+  "main": "www/SecureScreen.js",
+  "cordova": {
+    "id": "cordova-plugin-secure-screen",
+    "platforms": [
+      "android",
+      "ios"
+    ]
+  },
+  "keywords": [
+    "cordova",
+    "android",
+    "ios",
+    "security",
+    "screenshot",
+    "screen-capture",
+    "privacy"
+  ],
+  "author": "Hari Krishnan",
+  "license": "MIT"
+}
