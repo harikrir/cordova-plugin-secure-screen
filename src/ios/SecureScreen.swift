@@ -1,110 +1,184 @@
 import UIKit
+import Cordova
 
 @objc(SecureScreen)
 class SecureScreen: CDVPlugin {
 
     private var blurView: UIVisualEffectView?
 
-    private var secureTextField: UITextField?
-private var originalSuperview: UIView?
-private var screenshotProtectionEnabled = false
+    private var screenshotProtectionEnabled = false
+    private var recordingProtectionEnabled = false
 
-@objc(enableScreenshotProtection:)
-func enableScreenshotProtection(command: CDVInvokedUrlCommand) {
+    private var screenshotCallbackId: String?
 
-    DispatchQueue.main.async {
+    override func pluginInitialize() {
 
-        if self.screenshotProtectionEnabled {
-            return
-        }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenshotTaken),
+            name: UIApplication.userDidTakeScreenshotNotification,
+            object: nil
+        )
 
-        guard let webView = self.webView else {
-            return
-        }
-
-        guard let superview = webView.superview else {
-            return
-        }
-
-        let secureField = UITextField(frame: superview.bounds)
-        secureField.isSecureTextEntry = true
-        secureField.isUserInteractionEnabled = false
-        secureField.translatesAutoresizingMaskIntoConstraints = false
-
-        superview.addSubview(secureField)
-
-        guard let secureContainer = secureField.subviews.first else {
-            return
-        }
-
-        self.originalSuperview = superview
-
-        webView.removeFromSuperview()
-
-        secureContainer.addSubview(webView)
-
-        webView.translatesAutoresizingMaskIntoConstraints = false
-
-        NSLayoutConstraint.activate([
-            webView.leadingAnchor.constraint(equalTo: secureContainer.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: secureContainer.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: secureContainer.topAnchor),
-            webView.bottomAnchor.constraint(equalTo: secureContainer.bottomAnchor)
-        ])
-
-        self.secureTextField = secureField
-        self.screenshotProtectionEnabled = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenCaptureChanged),
+            name: UIScreen.capturedDidChangeNotification,
+            object: nil
+        )
     }
 
-    let result = CDVPluginResult(status: CDVCommandStatus_OK)
+    // =====================================================
+    // Screenshot Detection
+    // =====================================================
 
-    commandDelegate.send(
-        result,
-        callbackId: command.callbackId
-    )
-}
+    @objc(enableScreenshotProtection:)
+    func enableScreenshotProtection(command: CDVInvokedUrlCommand) {
 
-@objc(disableScreenshotProtection:)
-func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
+        screenshotProtectionEnabled = true
 
-    DispatchQueue.main.async {
+        let result = CDVPluginResult(
+            status: CDVCommandStatus_OK
+        )
 
-        guard self.screenshotProtectionEnabled,
-              let webView = self.webView,
-              let originalSuperview = self.originalSuperview else {
+        commandDelegate.send(
+            result,
+            callbackId: command.callbackId
+        )
+    }
+
+    @objc(disableScreenshotProtection:)
+    func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
+
+        screenshotProtectionEnabled = false
+
+        let result = CDVPluginResult(
+            status: CDVCommandStatus_OK
+        )
+
+        commandDelegate.send(
+            result,
+            callbackId: command.callbackId
+        )
+    }
+
+    @objc(registerScreenshotListener:)
+    func registerScreenshotListener(
+        command: CDVInvokedUrlCommand
+    ) {
+
+        screenshotCallbackId = command.callbackId
+
+        let result = CDVPluginResult(
+            status: CDVCommandStatus_NO_RESULT
+        )
+
+        result?.setKeepCallbackAs(true)
+
+        commandDelegate.send(
+            result,
+            callbackId: command.callbackId
+        )
+    }
+
+    @objc
+    private func screenshotTaken() {
+
+        guard screenshotProtectionEnabled else {
             return
         }
 
-        webView.removeFromSuperview()
+        print("Screenshot detected")
 
-        originalSuperview.addSubview(webView)
+        guard let callbackId = screenshotCallbackId else {
+            return
+        }
 
-        webView.translatesAutoresizingMaskIntoConstraints = false
+        let result = CDVPluginResult(
+            status: CDVCommandStatus_OK,
+            messageAs: "SCREENSHOT_DETECTED"
+        )
 
-        NSLayoutConstraint.activate([
-            webView.leadingAnchor.constraint(equalTo: originalSuperview.leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: originalSuperview.trailingAnchor),
-            webView.topAnchor.constraint(equalTo: originalSuperview.topAnchor),
-            webView.bottomAnchor.constraint(equalTo: originalSuperview.bottomAnchor)
-        ])
+        result?.setKeepCallbackAs(true)
 
-        self.secureTextField?.removeFromSuperview()
-
-        self.secureTextField = nil
-        self.originalSuperview = nil
-        self.screenshotProtectionEnabled = false
+        commandDelegate.send(
+            result,
+            callbackId: callbackId
+        )
     }
 
-    let result = CDVPluginResult(status: CDVCommandStatus_OK)
+    // =====================================================
+    // Screen Recording Protection
+    // =====================================================
 
-    commandDelegate.send(
-        result,
-        callbackId: command.callbackId
-    )
-}
+    @objc(enableScreenRecordingProtection:)
+    func enableScreenRecordingProtection(
+        command: CDVInvokedUrlCommand
+    ) {
+
+        recordingProtectionEnabled = true
+
+        let result = CDVPluginResult(
+            status: CDVCommandStatus_OK
+        )
+
+        commandDelegate.send(
+            result,
+            callbackId: command.callbackId
+        )
+    }
+
+    @objc(disableScreenRecordingProtection:)
+    func disableScreenRecordingProtection(
+        command: CDVInvokedUrlCommand
+    ) {
+
+        recordingProtectionEnabled = false
+
+        removeBlur()
+
+        let result = CDVPluginResult(
+            status: CDVCommandStatus_OK
+        )
+
+        commandDelegate.send(
+            result,
+            callbackId: command.callbackId
+        )
+    }
+
+    @objc
+    private func screenCaptureChanged() {
+
+        guard recordingProtectionEnabled else {
+            return
+        }
+
+        DispatchQueue.main.async {
+
+            if UIScreen.main.isCaptured {
+
+                print("Screen recording detected")
+
+                self.addBlur()
+
+            } else {
+
+                print("Screen recording stopped")
+
+                self.removeBlur()
+            }
+        }
+    }
+
+    // =====================================================
+    // App Switcher Blur
+    // =====================================================
 
     @objc(enableAppSwitcherBlur:)
-    func enableAppSwitcherBlur(command: CDVInvokedUrlCommand) {
+    func enableAppSwitcherBlur(
+        command: CDVInvokedUrlCommand
+    ) {
 
         NotificationCenter.default.addObserver(
             self,
@@ -131,9 +205,23 @@ func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
     }
 
     @objc(disableAppSwitcherBlur:)
-    func disableAppSwitcherBlur(command: CDVInvokedUrlCommand) {
+    func disableAppSwitcherBlur(
+        command: CDVInvokedUrlCommand
+    ) {
 
-        NotificationCenter.default.removeObserver(self)
+        NotificationCenter.default.removeObserver(
+            self,
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+
+        NotificationCenter.default.removeObserver(
+            self,
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+
+        removeBlur()
 
         let result = CDVPluginResult(
             status: CDVCommandStatus_OK
@@ -144,6 +232,10 @@ func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
             callbackId: command.callbackId
         )
     }
+
+    // =====================================================
+    // Blur Helpers
+    // =====================================================
 
     @objc
     private func addBlur() {
@@ -158,17 +250,18 @@ func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
             effect: blurEffect
         )
 
-        blur.frame = UIScreen.main.bounds
-        blur.autoresizingMask = [
-            .flexibleWidth,
-            .flexibleHeight
-        ]
+        if let window = UIApplication.shared.windows.first {
 
-        UIApplication.shared.windows.first?.addSubview(
-            blur
-        )
+            blur.frame = window.bounds
+            blur.autoresizingMask = [
+                .flexibleWidth,
+                .flexibleHeight
+            ]
 
-        blurView = blur
+            window.addSubview(blur)
+
+            blurView = blur
+        }
     }
 
     @objc
@@ -176,5 +269,10 @@ func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
 
         blurView?.removeFromSuperview()
         blurView = nil
+    }
+
+    deinit {
+
+        NotificationCenter.default.removeObserver(self)
     }
 }
