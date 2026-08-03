@@ -1,5 +1,5 @@
 import UIKit
-import Cordova
+
 
 @objc(SecureScreen)
 class SecureScreen: CDVPlugin {
