@@ -43,4 +43,16 @@ var SecureScreen = {
     }
 };
 
+registerScreenshotListener: function (success, error) {
+    exec(success, error, 'SecureScreen', 'registerScreenshotListener', []);
+},
+
+enableScreenRecordingProtection: function (success, error) {
+    exec(success, error, 'SecureScreen', 'enableScreenRecordingProtection', []);
+},
+
+disableScreenRecordingProtection: function (success, error) {
+    exec(success, error, 'disableScreenRecordingProtection', []);
+}
+
 module.exports = SecureScreen;
