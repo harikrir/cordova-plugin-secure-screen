@@ -60,7 +60,7 @@
 
         <preference
             name="UseSwiftLanguageVersion"
-            value="5" />
+            value="5.0" />
 
     </platform>
 
