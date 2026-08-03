@@ -1,11 +1,67 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin id="cordova-plugin-secure-screen" version="1.0.0" xmlns="http://apache.org/cordova/ns/plugins/1.0">
-<name>SecureScreen</name>
-<js-module src="www/SecureScreen.js" name="SecureScreen"><clobbers target="SecureScreen"/></js-module>
-<platform name="android">
-<source-file src="src/android/SecureScreen.java" target-dir="src/com/yourplugin/securescreen"/>
-</platform>
-<platform name="ios">
-<source-file src="src/ios/SecureScreen.swift"/>
-</platform>
+
+<plugin
+    id="cordova-plugin-secure-screen"
+    version="1.0.0"
+    xmlns="http://apache.org/cordova/ns/plugins/1.0"
+    xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <name>SecureScreen</name>
+
+    <description>
+        Screenshot protection and App Switcher blur for Android and iOS.
+    </description>
+
+    <license>MIT</license>
+
+    <engines>
+        <engine name="cordova" version=">=10.0.0" />
+        <engine name="cordova-android" version=">=10.0.0" />
+        <engine name="cordova-ios" version=">=6.0.0" />
+    </engines>
+
+  
+  <!-- ================= JS ================= -->
+    <js-module src="www/SecureScreen.js" name="SecureScreen">
+        <clobbers target="cordova.plugins.SecureScreen" />
+    </js-module>
+
+    <!-- Android -->
+    <platform name="android">
+
+        <config-file target="res/xml/config.xml" parent="/*">
+            <feature name="SecureScreen">
+                <param
+                    name="android-package"
+                    value="com.yourplugin.securescreen.SecureScreen" />
+            </feature>
+        </config-file>
+
+      
+    <source-file src="src/android/SecureScreen.java"
+                 target-dir="app/src/main/java/com/yourplugin" />
+
+
+    </platform>
+
+    <!-- iOS -->
+    <platform name="ios">
+
+        <config-file target="config.xml" parent="/*">
+            <feature name="SecureScreen">
+                <param
+                    name="ios-package"
+                    value="SecureScreen" />
+            </feature>
+        </config-file>      
+
+          
+        <source-file src="src/ios/SecureScreen.swift" />
+
+        <preference
+            name="UseSwiftLanguageVersion"
+            value="5" />
+
+    </platform>
+
 </plugin>
