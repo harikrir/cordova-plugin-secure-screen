@@ -5,31 +5,103 @@ class SecureScreen: CDVPlugin {
 
     private var blurView: UIVisualEffectView?
 
-    @objc(enableScreenshotProtection:)
-    func enableScreenshotProtection(command: CDVInvokedUrlCommand) {
+    private var secureTextField: UITextField?
+private var originalSuperview: UIView?
+private var screenshotProtectionEnabled = false
 
-        let result = CDVPluginResult(
-            status: CDVCommandStatus_OK
-        )
+@objc(enableScreenshotProtection:)
+func enableScreenshotProtection(command: CDVInvokedUrlCommand) {
 
-        commandDelegate.send(
-            result,
-            callbackId: command.callbackId
-        )
+    DispatchQueue.main.async {
+
+        if self.screenshotProtectionEnabled {
+            return
+        }
+
+        guard let webView = self.webView else {
+            return
+        }
+
+        guard let superview = webView.superview else {
+            return
+        }
+
+        let secureField = UITextField(frame: superview.bounds)
+        secureField.isSecureTextEntry = true
+        secureField.isUserInteractionEnabled = false
+        secureField.translatesAutoresizingMaskIntoConstraints = false
+
+        superview.addSubview(secureField)
+
+        guard let secureContainer = secureField.subviews.first else {
+            return
+        }
+
+        self.originalSuperview = superview
+
+        webView.removeFromSuperview()
+
+        secureContainer.addSubview(webView)
+
+        webView.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: secureContainer.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: secureContainer.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: secureContainer.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: secureContainer.bottomAnchor)
+        ])
+
+        self.secureTextField = secureField
+        self.screenshotProtectionEnabled = true
     }
 
-    @objc(disableScreenshotProtection:)
-    func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
+    let result = CDVPluginResult(status: CDVCommandStatus_OK)
 
-        let result = CDVPluginResult(
-            status: CDVCommandStatus_OK
-        )
+    commandDelegate.send(
+        result,
+        callbackId: command.callbackId
+    )
+}
 
-        commandDelegate.send(
-            result,
-            callbackId: command.callbackId
-        )
+@objc(disableScreenshotProtection:)
+func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
+
+    DispatchQueue.main.async {
+
+        guard self.screenshotProtectionEnabled,
+              let webView = self.webView,
+              let originalSuperview = self.originalSuperview else {
+            return
+        }
+
+        webView.removeFromSuperview()
+
+        originalSuperview.addSubview(webView)
+
+        webView.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            webView.leadingAnchor.constraint(equalTo: originalSuperview.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: originalSuperview.trailingAnchor),
+            webView.topAnchor.constraint(equalTo: originalSuperview.topAnchor),
+            webView.bottomAnchor.constraint(equalTo: originalSuperview.bottomAnchor)
+        ])
+
+        self.secureTextField?.removeFromSuperview()
+
+        self.secureTextField = nil
+        self.originalSuperview = nil
+        self.screenshotProtectionEnabled = false
     }
+
+    let result = CDVPluginResult(status: CDVCommandStatus_OK)
+
+    commandDelegate.send(
+        result,
+        callbackId: command.callbackId
+    )
+}
 
     @objc(enableAppSwitcherBlur:)
     func enableAppSwitcherBlur(command: CDVInvokedUrlCommand) {
