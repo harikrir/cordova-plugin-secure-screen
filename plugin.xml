@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin id="cordova-plugin-secure-screen" version="1.0.0" xmlns="http://apache.org/cordova/ns/plugins/1.0">
+<name>SecureScreen</name>
+<js-module src="www/SecureScreen.js" name="SecureScreen"><clobbers target="SecureScreen"/></js-module>
+<platform name="android">
+<source-file src="src/android/SecureScreen.java" target-dir="src/com/yourplugin/securescreen"/>
+</platform>
+<platform name="ios">
+<source-file src="src/ios/SecureScreen.swift"/>
+</platform>
+</plugin>
