@@ -40,8 +40,7 @@ var SecureScreen = {
             'disableAppSwitcherBlur',
             []
         );
-    }
-};
+    },
 
 registerScreenshotListener: function (success, error) {
     exec(success, error, 'SecureScreen', 'registerScreenshotListener', []);
@@ -54,5 +53,9 @@ enableScreenRecordingProtection: function (success, error) {
 disableScreenRecordingProtection: function (success, error) {
     exec(success, error, 'disableScreenRecordingProtection', []);
 }
+    
+};
+
+
 
 module.exports = SecureScreen;
