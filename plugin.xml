@@ -58,10 +58,7 @@
           
         <source-file src="src/ios/SecureScreen.swift" />
 
-        <preference
-            name="UseSwiftLanguageVersion"
-            value="5.0" />
-
+      
     </platform>
 
 </plugin>
