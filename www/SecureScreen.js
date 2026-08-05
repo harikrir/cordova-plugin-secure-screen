@@ -2,56 +2,34 @@ var exec = require('cordova/exec');
 
 var SecureScreen = {
 
-    enableScreenshotProtection: function (success, error) {
-        exec(
-            success,
-            error,
-            'SecureScreen',
-            'enableScreenshotProtection',
-            []
-        );
+    enableScreenshotProtection: function (successCallback, errorCallback) {
+        exec(successCallback, errorCallback, 'SecureScreen', 'enableScreenshotProtection', []);
     },
 
-    disableScreenshotProtection: function (success, error) {
-        exec(
-            success,
-            error,
-            'SecureScreen',
-            'disableScreenshotProtection',
-            []
-        );
+    disableScreenshotProtection: function (successCallback, errorCallback) {
+        exec(successCallback, errorCallback, 'SecureScreen', 'disableScreenshotProtection', []);
     },
 
-    enableAppSwitcherBlur: function (success, error) {
-        exec(
-            success,
-            error,
-            'SecureScreen',
-            'enableAppSwitcherBlur',
-            []
-        );
+    enableAppSwitcherBlur: function (successCallback, errorCallback) {
+        exec(successCallback, errorCallback, 'SecureScreen', 'enableAppSwitcherBlur', []);
     },
 
-    disableAppSwitcherBlur: function (success, error) {
-        exec(
-            success,
-            error,
-            'SecureScreen',
-            'disableAppSwitcherBlur',
-            []
-        );
+    disableAppSwitcherBlur: function (successCallback, errorCallback) {
+        exec(successCallback, errorCallback, 'SecureScreen', 'disableAppSwitcherBlur', []);
     },
 
-registerScreenshotListener: function (success, error) {
-    exec(success, error, 'SecureScreen', 'registerScreenshotListener', []);
-},
+    registerScreenshotListener: function (successCallback, errorCallback) {
+        exec(successCallback, errorCallback, 'SecureScreen', 'registerScreenshotListener', []);
+    },
 
-enableScreenRecordingProtection: function (success, error) {
-    exec(success, error, 'SecureScreen', 'enableScreenRecordingProtection', []);
-},
+    enableScreenRecordingProtection: function (successCallback, errorCallback) {
+        exec(successCallback, errorCallback, 'SecureScreen', 'enableScreenRecordingProtection', []);
+    },
 
-disableScreenRecordingProtection: function (success, error) {
-exec(success, error, 'SecureScreen', 'disableScreenRecordingProtection', []);
-}
-    
+    disableScreenRecordingProtection: function (successCallback, errorCallback) {
+        exec(successCallback, errorCallback, 'SecureScreen', 'disableScreenRecordingProtection', []);
+    }
+
 };
+
+module.exports = SecureScreen;
