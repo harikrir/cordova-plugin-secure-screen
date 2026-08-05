@@ -16,8 +16,6 @@ class SecureScreen: CDVPlugin {
 
     override func pluginInitialize() {
 
-        // Keep your existing observers if you still want to log or send callbacks
-
         NotificationCenter.default.addObserver(
 
             self,
@@ -46,7 +44,7 @@ class SecureScreen: CDVPlugin {
 
     // =====================================================
 
-    // Screenshot Protection (The Workaround)
+    // Screenshot Protection
 
     // =====================================================
 
@@ -55,8 +53,6 @@ class SecureScreen: CDVPlugin {
     func enableScreenshotProtection(command: CDVInvokedUrlCommand) {
 
         screenshotProtectionEnabled = true
-
-        // Setup the secure view on the main thread
 
         DispatchQueue.main.async {
 
@@ -76,8 +72,6 @@ class SecureScreen: CDVPlugin {
 
         screenshotProtectionEnabled = false
 
-        // Remove the secure view on the main thread
-
         DispatchQueue.main.async {
 
             self.removeSecureView()
@@ -92,29 +86,35 @@ class SecureScreen: CDVPlugin {
 
     // =====================================================
 
-    // Secure View Setup (The Magic Hack)
+    // Secure View Setup (Fixed for Cordova/OutSystems)
 
     // =====================================================
 
     private func setupSecureView() {
 
-        // Ensure we haven't already set it up, and we have a webView
-
         guard secureTextField == nil, let webView = self.webView, let parent = webView.superview else { return }
 
-        // Create a secure text field
+        // 1. Create text field using standard frame layout instead of AutoLayout
 
-        let textField = UITextField()
+        let textField = UITextField(frame: parent.bounds)
 
-        textField.isSecureTextEntry = true
+        textField.backgroundColor = .clear
 
-        textField.isUserInteractionEnabled = false
+        textField.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
-        // Add it to the parent view hierarchy
+        // FIX FOR FREEZE: Do NOT set isUserInteractionEnabled to false. 
+
+        // Leaving it true allows the OutSystems web view to receive touches normally.
+
+        textField.isUserInteractionEnabled = true 
+
+        // 2. Add to parent BEFORE making it secure (required for iOS 14+)
 
         parent.insertSubview(textField, belowSubview: webView)
 
-        // Extract the secure view container from the text field
+        textField.isSecureTextEntry = true
+
+        // 3. Extract the secure view container
 
         guard let secureContainer = textField.subviews.first else {
 
@@ -124,25 +124,15 @@ class SecureScreen: CDVPlugin {
 
         }
 
-        // Move the Cordova webView inside the secure container
+        // 4. Move the Cordova webView inside the secure container
 
         secureContainer.addSubview(webView)
 
-        // Ensure the webView still fills the entire screen
+        // FIX FOR BLANKING: Force the webview to match the textfield bounds exactly
 
-        webView.translatesAutoresizingMaskIntoConstraints = false
+        webView.frame = textField.bounds
 
-        NSLayoutConstraint.activate([
-
-            webView.topAnchor.constraint(equalTo: parent.topAnchor),
-
-            webView.bottomAnchor.constraint(equalTo: parent.bottomAnchor),
-
-            webView.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
-
-            webView.trailingAnchor.constraint(equalTo: parent.trailingAnchor)
-
-        ])
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
         self.secureTextField = textField
 
@@ -156,13 +146,13 @@ class SecureScreen: CDVPlugin {
 
         parent.addSubview(webView)
 
-        // Restore layout constraints
-
-        webView.translatesAutoresizingMaskIntoConstraints = true
+        // Restore standard Cordova frame layout
 
         webView.frame = parent.bounds
 
-        // Remove the secure text field
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+        // Clean up the text field
 
         textField.removeFromSuperview()
 
@@ -172,7 +162,7 @@ class SecureScreen: CDVPlugin {
 
     // =====================================================
 
-    // Listeners & Callbacks (Unchanged)
+    // Listeners & Callbacks
 
     // =====================================================
 
@@ -218,10 +208,6 @@ class SecureScreen: CDVPlugin {
 
     // =====================================================
 
-    // Note: The secure UITextField workaround above usually blacks out 
-
-    // screen recordings automatically as well. 
-
     @objc(enableScreenRecordingProtection:)
 
     func enableScreenRecordingProtection(command: CDVInvokedUrlCommand) {
@@ -240,7 +226,11 @@ class SecureScreen: CDVPlugin {
 
         recordingProtectionEnabled = false
 
-        removeBlur()
+        DispatchQueue.main.async {
+
+            self.removeBlur()
+
+        }
 
         let result = CDVPluginResult(status: CDVCommandStatus_OK)
 
@@ -305,6 +295,42 @@ class SecureScreen: CDVPlugin {
             object: nil
 
         )
+
+        let result = CDVPluginResult(status: CDVCommandStatus_OK)
+
+        commandDelegate.send(result, callbackId: command.callbackId)
+
+    }
+
+    @objc(disableAppSwitcherBlur:)
+
+    func disableAppSwitcherBlur(command: CDVInvokedUrlCommand) {
+
+        NotificationCenter.default.removeObserver(
+
+            self,
+
+            name: UIApplication.willResignActiveNotification,
+
+            object: nil
+
+        )
+
+        NotificationCenter.default.removeObserver(
+
+            self,
+
+            name: UIApplication.didBecomeActiveNotification,
+
+            object: nil
+
+        )
+
+        DispatchQueue.main.async {
+
+            self.removeBlur()
+
+        }
 
         let result = CDVPluginResult(status: CDVCommandStatus_OK)
 
