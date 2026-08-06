@@ -43,59 +43,127 @@ class SecureScreen: CDVPlugin {
    }
 
 // =====================================================
-  // Secure View Setup (The Layer Hack for OutSystems/Cordova)
-  // =====================================================
-  private func setupSecureView() {
-      guard secureTextField == nil, let webView = self.webView, let parent = webView.superview else { return }
-      // 1. Create a transparent text field to act as the secure container
-      let textField = UITextField()
-      textField.isSecureTextEntry = true
-      textField.backgroundColor = .clear
-      // CRITICAL FIX 1: This MUST be true. If false, the webview inside won't receive touches/scrolls.
-      textField.isUserInteractionEnabled = true
-      // 2. Match the exact layout of the web view
-      textField.frame = webView.frame
-      textField.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      // 3. Insert the text field in the exact same z-index position the webview was in
-      if let index = parent.subviews.firstIndex(of: webView) {
-          parent.insertSubview(textField, at: index)
-      } else {
-          parent.addSubview(textField)
-      }
-      // Force iOS to build the internal secure layers immediately
-      textField.setNeedsLayout()
-      textField.layoutIfNeeded()
-      guard let secureCanvasView = textField.subviews.first else {
-          print("SecureScreen: Could not find secure canvas")
-          textField.removeFromSuperview()
-          return
-      }
-      // Ensure touches pass through the internal canvas to your app
-      secureCanvasView.isUserInteractionEnabled = true
-      // CRITICAL FIX 2: Move the ENTIRE view using addSubview, not addSublayer.
-      // WKWebView will turn completely white if its layer is detached from its UI hierarchy.
-      secureCanvasView.addSubview(webView)
-      // Match frames so the webview stretches correctly inside the secure canvas
-      webView.frame = secureCanvasView.bounds
-      webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      self.secureTextField = textField
-  }
-  private func removeSecureView() {
-      guard let textField = secureTextField, let webView = self.webView, let originalParent = textField.superview else { return }
-      // 1. Restore the webview back to the main view controller
-      if let index = originalParent.subviews.firstIndex(of: textField) {
-          originalParent.insertSubview(webView, at: index)
-      } else {
-          originalParent.addSubview(webView)
-      }
-      // 2. Restore layout bindings
-      webView.frame = originalParent.bounds
-      webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      // 3. Clean up the hack
-      textField.removeFromSuperview()
-      self.secureTextField = nil
-  }
 
+   // Secure View Setup (The Layer Hack for OutSystems/Cordova)
+
+   // =====================================================
+
+   private func setupSecureView() {
+
+       guard secureTextField == nil, let webView = self.webView, let parent = webView.superview else { return }
+
+       let textField = UITextField()
+
+       textField.isSecureTextEntry = true
+
+       textField.backgroundColor = .clear
+
+       textField.isUserInteractionEnabled = true
+
+       // 1. Insert text field exactly where the webview was
+
+       if let index = parent.subviews.firstIndex(of: webView) {
+
+           parent.insertSubview(textField, at: index)
+
+       } else {
+
+           parent.addSubview(textField)
+
+       }
+
+       // 2. Force the TextField to stretch to the parent's edges using Constraints
+
+       textField.translatesAutoresizingMaskIntoConstraints = false
+
+       NSLayoutConstraint.activate([
+
+           textField.topAnchor.constraint(equalTo: parent.topAnchor),
+
+           textField.bottomAnchor.constraint(equalTo: parent.bottomAnchor),
+
+           textField.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
+
+           textField.trailingAnchor.constraint(equalTo: parent.trailingAnchor)
+
+       ])
+
+       // Force iOS to build the internal secure layers immediately
+
+       textField.setNeedsLayout()
+
+       textField.layoutIfNeeded()
+
+       guard let secureCanvasView = textField.subviews.first else { 
+
+           print("SecureScreen: Could not find secure canvas")
+
+           textField.removeFromSuperview()
+
+           return 
+
+       }
+
+       secureCanvasView.isUserInteractionEnabled = true
+
+       // 3. Move the WKWebView inside the secure canvas
+
+       secureCanvasView.addSubview(webView)
+
+       // 4. CRITICAL FIX: Force the WebView to stretch to the TextField edges using Constraints.
+
+       // This prevents the WebView from collapsing to 0x0 inside the empty canvas.
+
+       webView.translatesAutoresizingMaskIntoConstraints = false
+
+       NSLayoutConstraint.activate([
+
+           webView.topAnchor.constraint(equalTo: textField.topAnchor),
+
+           webView.bottomAnchor.constraint(equalTo: textField.bottomAnchor),
+
+           webView.leadingAnchor.constraint(equalTo: textField.leadingAnchor),
+
+           webView.trailingAnchor.constraint(equalTo: textField.trailingAnchor)
+
+       ])
+
+       self.secureTextField = textField
+
+   }
+
+   private func removeSecureView() {
+
+       guard let textField = secureTextField, let webView = self.webView, let originalParent = textField.superview else { return }
+
+       // 1. Restore the webview back to the main view controller
+
+       if let index = originalParent.subviews.firstIndex(of: textField) {
+
+           originalParent.insertSubview(webView, at: index)
+
+       } else {
+
+           originalParent.addSubview(webView)
+
+       }
+
+       // 2. Restore Cordova's default sizing behavior (removing constraints)
+
+       webView.translatesAutoresizingMaskIntoConstraints = true
+
+       webView.frame = originalParent.bounds
+
+       webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+       // 3. Clean up the hack
+
+       textField.removeFromSuperview()
+
+       self.secureTextField = nil
+
+   }
+ 
    
    // =====================================================
    // Listeners & Callbacks
