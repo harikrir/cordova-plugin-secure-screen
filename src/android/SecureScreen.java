@@ -268,37 +268,31 @@ public class SecureScreen extends CordovaPlugin {
 
     }
 
-    private void checkDisplays(DisplayManager displayManager) {
-
-        Activity activity = cordova.getActivity();
-
-        if (activity == null) return;
-
-        boolean recordingDetected = false;
-
-        Display[] displays = displayManager.getDisplays();
-
-        for (Display display : displays) {
-
-            if (display.getDisplayId() != Display.DEFAULT_DISPLAY) {
-
-                recordingDetected = true;
-
-                break;
-
-            }
-
-        }
-
-        if (isScreenRecordingDetected != recordingDetected) {
-
-            isScreenRecordingDetected = recordingDetected;
-
-            updateSecurityFlags(activity);
-
-        }
-
-    }
+   private void checkDisplays(DisplayManager displayManager) {
+       Activity activity = cordova.getActivity();
+       if (activity == null) return;
+       boolean recordingDetected = false;
+       // 1. Check all standard displays
+       Display[] displays = displayManager.getDisplays();
+       for (Display display : displays) {
+           // If it's not the default display, something is capturing/mirroring the screen
+           if (display.getDisplayId() != Display.DEFAULT_DISPLAY) {
+               recordingDetected = true;
+               break;
+           }
+       }
+       // 2. Check for hidden presentation displays (some OEM recorders hide here)
+       if (!recordingDetected) {
+           Display[] presentationDisplays = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
+           if (presentationDisplays != null && presentationDisplays.length > 0) {
+               recordingDetected = true;
+           }
+       }
+       if (isScreenRecordingDetected != recordingDetected) {
+           isScreenRecordingDetected = recordingDetected;
+           updateSecurityFlags(activity);
+       }
+   }
 
     private void createOverlay(Activity activity) {
 
