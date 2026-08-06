@@ -41,37 +41,49 @@ class SecureScreen: CDVPlugin {
        let result = CDVPluginResult(status: CDVCommandStatus_OK)
        commandDelegate.send(result, callbackId: command.callbackId)
    }
-   // =====================================================
-   // Secure View Setup (The Layer Hack for OutSystems)
-   // =====================================================
-   private func setupSecureView() {
-       guard secureTextField == nil, let webView = self.webView, let parent = webView.superview else { return }
-       // 1. Create a transparent text field to provide the secure layer
-       let textField = UITextField()
-       textField.isSecureTextEntry = true
-       textField.isUserInteractionEnabled = false // Let touches pass through
-       textField.backgroundColor = .clear
-       // 2. Match the exact layout of the OutSystems web view
-       textField.frame = webView.frame
-       textField.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-       // 3. Insert into the view hierarchy so iOS initializes its layer tree
-       parent.insertSubview(textField, belowSubview: webView)
-       // 4. The Layer Hack: Move ONLY the rendering layer into the secure text field.
-       // This leaves the UIView hierarchy completely intact for touches (fixing the freeze),
-       // but routes the visual output through the OS screenshot blocker.
-       if let secureLayer = textField.layer.sublayers?.first {
-           secureLayer.addSublayer(webView.layer)
-       }
-       self.secureTextField = textField
-   }
-   private func removeSecureView() {
-       guard let textField = secureTextField, let webView = self.webView, let parent = webView.superview else { return }
-       // 1. Move the web view's layer back to its original parent view layer
-       parent.layer.addSublayer(webView.layer)
-       // 2. Clean up the text field
-       textField.removeFromSuperview()
-       self.secureTextField = nil
-   }
+
+// =====================================================
+  // Secure View Setup (The Layer Hack for OutSystems/Cordova)
+  // =====================================================
+  private func setupSecureView() {
+      guard secureTextField == nil, let webView = self.webView, let parent = webView.superview else { return }
+      // 1. Create a transparent text field to provide the secure layer
+      let textField = UITextField()
+      textField.isSecureTextEntry = true
+      textField.isUserInteractionEnabled = false // Let touches pass through
+      textField.backgroundColor = .clear
+      // 2. Match the exact layout of the web view
+      textField.frame = webView.frame
+      textField.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      // 3. Insert into the view hierarchy
+      parent.insertSubview(textField, belowSubview: webView)
+      // CRITICAL FIX 1: Force iOS to build the internal layers immediately.
+      // Without this, the subviews/sublayers don't exist yet on modern iOS.
+      textField.setNeedsLayout()
+      textField.layoutIfNeeded()
+      // CRITICAL FIX 2: Target the first subview's layer (the actual text canvas in iOS 15+)
+      guard let secureCanvasView = textField.subviews.first else {
+          print("SecureScreen: Could not find secure canvas")
+          return
+      }
+      // 4. Move ONLY the rendering layer into the secure text field canvas.
+      secureCanvasView.layer.addSublayer(webView.layer)
+      // Ensure the webview layout dimensions stay perfectly aligned inside the new layer
+      webView.layer.frame = secureCanvasView.bounds
+      self.secureTextField = textField
+  }
+  private func removeSecureView() {
+      guard let textField = secureTextField, let webView = self.webView, let parent = textField.superview else { return }
+      // 1. Natively reparent the webView back to the main view.
+      // Calling addSubview natively restores the layer hierarchy safely.
+      parent.addSubview(webView)
+      // 2. Clean up the text field
+      textField.removeFromSuperview()
+      self.secureTextField = nil
+  }
+
+
+   
    // =====================================================
    // Listeners & Callbacks
    // =====================================================
