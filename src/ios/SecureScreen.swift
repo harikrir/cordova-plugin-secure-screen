@@ -44,7 +44,7 @@ class SecureScreen: CDVPlugin {
 
 // =====================================================
 
-   // Secure View Setup (The Layer Hack for OutSystems/Cordova)
+   // Secure View Setup (OutSystems / Cordova Safe Layer Hack)
 
    // =====================================================
 
@@ -52,7 +52,7 @@ class SecureScreen: CDVPlugin {
 
        guard secureTextField == nil, let webView = self.webView, let parent = webView.superview else { return }
 
-       // 1. Create the secure text field container
+       // 1. Create the fake password field
 
        let textField = UITextField()
 
@@ -60,43 +60,29 @@ class SecureScreen: CDVPlugin {
 
        textField.backgroundColor = .clear
 
-       textField.isUserInteractionEnabled = false // We don't want the text field to steal your touches
+       textField.textColor = .clear // Hide any dummy text
 
-       // 2. Insert it into the view hierarchy
+       textField.isUserInteractionEnabled = false // Let touches pass through to OutSystems
+
+       // Add a blank space to force iOS to wake up the internal secure canvas
+
+       textField.text = " " 
+
+       // 2. Set it to exactly match the screen size
+
+       textField.frame = parent.bounds
+
+       textField.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+       // 3. Insert behind the OutSystems webview
 
        parent.insertSubview(textField, belowSubview: webView)
 
-       // 3. CRITICAL: Force the text field to fill the screen using constraints.
-
-       // If we don't do this, the text field is 0x0, which causes the "White Screen" bug
-
-       // because your webView layer will be forced into a 0 pixel box.
-
-       textField.translatesAutoresizingMaskIntoConstraints = false
-
-       NSLayoutConstraint.activate([
-
-           textField.topAnchor.constraint(equalTo: parent.topAnchor),
-
-           textField.bottomAnchor.constraint(equalTo: parent.bottomAnchor),
-
-           textField.leadingAnchor.constraint(equalTo: parent.leadingAnchor),
-
-           textField.trailingAnchor.constraint(equalTo: parent.trailingAnchor)
-
-       ])
-
-       // Force iOS to build the internal layers immediately so we can access them
-
-       textField.setNeedsLayout()
-
        textField.layoutIfNeeded()
 
-       // Find the actual secure canvas layer (iOS 15+)
+       // 4. Find the internal privacy canvas (iOS 15+)
 
        guard let secureCanvasView = textField.subviews.first else { 
-
-           print("SecureScreen: Could not find secure canvas")
 
            textField.removeFromSuperview()
 
@@ -104,17 +90,25 @@ class SecureScreen: CDVPlugin {
 
        }
 
-       // 4. THE LAYER HACK: 
+       // 5. CRITICAL FIX FOR iOS 17 SCREENSHOT LEAK:
 
-       // We move ONLY the layer, not the view (`addSublayer` instead of `addSubview`).
+       // The internal canvas defaults to the size of the text. If it's too small, iOS 
 
-       // Why? WKWebView runs in a separate process. Using `addSublayer` forces the hardware 
+       // won't blur the whole screen. We MUST force it to physically cover the app!
 
-       // to mask it, while leaving the view in the main hierarchy so touches don't freeze!
+       secureCanvasView.frame = textField.bounds
+
+       secureCanvasView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+       // 6. THE OUTSYSTEMS HACK:
+
+       // We move ONLY the webView's *layer*, not the view itself!
+
+       // Moving the view crashes OutSystems (causing the White Screen).
+
+       // Moving the layer protects the screen visually while leaving the view hierarchy perfectly intact.
 
        secureCanvasView.layer.addSublayer(webView.layer)
-
-       webView.layer.frame = secureCanvasView.bounds
 
        self.secureTextField = textField
 
@@ -122,39 +116,22 @@ class SecureScreen: CDVPlugin {
 
    private func removeSecureView() {
 
-       guard let textField = secureTextField, let webView = self.webView, let originalParent = textField.superview else { return }
+       guard let textField = secureTextField, let webView = self.webView, let parent = webView.superview else { return }
 
-       // 1. Restore the layer back to the original Web View
+       // 1. Restore the webView's layer back to its original parent's layer
 
-       // The easiest way to force UIKit to repair a detached layer is to just re-add the view to the parent.
+       // This flawlessly reverses the hack without triggering an OutSystems/Cordova reload
 
-       webView.removeFromSuperview()
+       parent.layer.addSublayer(webView.layer)
 
-       originalParent.addSubview(webView)
-
-       // 2. Ensure the web view stays full screen
-
-       webView.translatesAutoresizingMaskIntoConstraints = false
-
-       NSLayoutConstraint.activate([
-
-           webView.topAnchor.constraint(equalTo: originalParent.topAnchor),
-
-           webView.bottomAnchor.constraint(equalTo: originalParent.bottomAnchor),
-
-           webView.leadingAnchor.constraint(equalTo: originalParent.leadingAnchor),
-
-           webView.trailingAnchor.constraint(equalTo: originalParent.trailingAnchor)
-
-       ])
-
-       // 3. Clean up the fake password field
+       // 2. Destroy the fake password field
 
        textField.removeFromSuperview()
 
        self.secureTextField = nil
 
    }
+ 
  
  
    
