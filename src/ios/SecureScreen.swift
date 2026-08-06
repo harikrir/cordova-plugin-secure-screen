@@ -46,21 +46,21 @@ class SecureScreen: CDVPlugin {
 
    // Secure View Setup (Window-Level / Global Blanket Approach)
 
-   // Inspired by Medium: "Screenshot Prevention in iOS Advanced Techniques"
-
    // =====================================================
 
    private func setupSecureView() {
 
-       // 1. Target the Global Window instead of the Cordova WebView
+       // 1. Safely unwrap the Global Window and Root View.
+
+       // (Notice 'window' does NOT have a question mark on line 3 of this block to prevent the Swift compilation error)
 
        guard secureTextField == nil, 
 
-             let window = UIApplication.shared.delegate?.window ?? UIApplication.shared.windows.first,
+             let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? UIApplication.shared.windows.first,
 
-             let rootView = window?.rootViewController?.view else { return }
+             let rootView = window.rootViewController?.view else { return }
 
-       // 2. Create the protection text field
+       // 2. Create the fake password field to generate the iOS security shield
 
        let textField = UITextField()
 
@@ -68,21 +68,19 @@ class SecureScreen: CDVPlugin {
 
        textField.backgroundColor = .clear
 
-       textField.isUserInteractionEnabled = false // Let touches pass to the app
+       textField.isUserInteractionEnabled = false // Let all touches pass through to your OutSystems app
 
-       // 3. Match the exact size of the entire device screen
+       // 3. Match the exact size of the device screen
 
-       textField.frame = rootView.bounds
+       textField.frame = window.bounds
 
        textField.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
-       // 4. Add the text field to the very bottom of the view hierarchy
+       // 4. Add the text field directly to the Window, behind the main app view
 
-       rootView.addSubview(textField)
+       window.insertSubview(textField, belowSubview: rootView)
 
-       rootView.sendSubviewToBack(textField)
-
-       // Force the OS to render the internal secure layers
+       // Force the OS to render the internal secure layers immediately
 
        textField.layoutIfNeeded()
 
@@ -96,9 +94,11 @@ class SecureScreen: CDVPlugin {
 
        }
 
-       // Force the canvas to stretch across the whole screen
+       // Force the internal canvas to stretch across the whole screen.
 
-       secureCanvasView.frame = rootView.bounds
+       // This is CRITICAL to prevent the screenshot engine from bypassing the shield.
+
+       secureCanvasView.frame = window.bounds
 
        secureCanvasView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
@@ -106,9 +106,7 @@ class SecureScreen: CDVPlugin {
 
        // We move the main layer of the *entire app* inside the privacy canvas.
 
-       // Because we are doing this at the Root View level, OutSystems' WKWebView is unaffected
-
-       // and will never crash or turn white.
+       // OutSystems continues functioning normally in the Root View, but its visual output is routed through the shield.
 
        secureCanvasView.layer.addSublayer(rootView.layer)
 
@@ -118,24 +116,27 @@ class SecureScreen: CDVPlugin {
 
    private func removeSecureView() {
 
+       // 1. Safely unwrap the Window and Root View again
+
+       // (Ensuring no optional chaining errors here either)
+
        guard let textField = secureTextField, 
 
-             let window = UIApplication.shared.delegate?.window ?? UIApplication.shared.windows.first,
+             let window = UIApplication.shared.windows.first(where: { $0.isKeyWindow }) ?? UIApplication.shared.windows.first,
 
-             let rootView = window?.rootViewController?.view else { return }
+             let rootView = window.rootViewController?.view else { return }
 
-       // 1. Safely restore the entire app's layer back to the global window
+       // 2. Safely restore the entire app's layer back to the global window
 
-       window?.layer.addSublayer(rootView.layer)
+       window.layer.addSublayer(rootView.layer)
 
-       // 2. Clean up the fake password field
+       // 3. Destroy the fake password field
 
        textField.removeFromSuperview()
 
        self.secureTextField = nil
 
    }
- 
  
  
  
