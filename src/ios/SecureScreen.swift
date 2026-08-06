@@ -47,41 +47,54 @@ class SecureScreen: CDVPlugin {
   // =====================================================
   private func setupSecureView() {
       guard secureTextField == nil, let webView = self.webView, let parent = webView.superview else { return }
-      // 1. Create a transparent text field to provide the secure layer
+      // 1. Create a transparent text field to act as the secure container
       let textField = UITextField()
       textField.isSecureTextEntry = true
-      textField.isUserInteractionEnabled = false // Let touches pass through
       textField.backgroundColor = .clear
+      // CRITICAL FIX 1: This MUST be true. If false, the webview inside won't receive touches/scrolls.
+      textField.isUserInteractionEnabled = true
       // 2. Match the exact layout of the web view
       textField.frame = webView.frame
       textField.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      // 3. Insert into the view hierarchy
-      parent.insertSubview(textField, belowSubview: webView)
-      // CRITICAL FIX 1: Force iOS to build the internal layers immediately.
-      // Without this, the subviews/sublayers don't exist yet on modern iOS.
+      // 3. Insert the text field in the exact same z-index position the webview was in
+      if let index = parent.subviews.firstIndex(of: webView) {
+          parent.insertSubview(textField, at: index)
+      } else {
+          parent.addSubview(textField)
+      }
+      // Force iOS to build the internal secure layers immediately
       textField.setNeedsLayout()
       textField.layoutIfNeeded()
-      // CRITICAL FIX 2: Target the first subview's layer (the actual text canvas in iOS 15+)
       guard let secureCanvasView = textField.subviews.first else {
           print("SecureScreen: Could not find secure canvas")
+          textField.removeFromSuperview()
           return
       }
-      // 4. Move ONLY the rendering layer into the secure text field canvas.
-      secureCanvasView.layer.addSublayer(webView.layer)
-      // Ensure the webview layout dimensions stay perfectly aligned inside the new layer
-      webView.layer.frame = secureCanvasView.bounds
+      // Ensure touches pass through the internal canvas to your app
+      secureCanvasView.isUserInteractionEnabled = true
+      // CRITICAL FIX 2: Move the ENTIRE view using addSubview, not addSublayer.
+      // WKWebView will turn completely white if its layer is detached from its UI hierarchy.
+      secureCanvasView.addSubview(webView)
+      // Match frames so the webview stretches correctly inside the secure canvas
+      webView.frame = secureCanvasView.bounds
+      webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
       self.secureTextField = textField
   }
   private func removeSecureView() {
-      guard let textField = secureTextField, let webView = self.webView, let parent = textField.superview else { return }
-      // 1. Natively reparent the webView back to the main view.
-      // Calling addSubview natively restores the layer hierarchy safely.
-      parent.addSubview(webView)
-      // 2. Clean up the text field
+      guard let textField = secureTextField, let webView = self.webView, let originalParent = textField.superview else { return }
+      // 1. Restore the webview back to the main view controller
+      if let index = originalParent.subviews.firstIndex(of: textField) {
+          originalParent.insertSubview(webView, at: index)
+      } else {
+          originalParent.addSubview(webView)
+      }
+      // 2. Restore layout bindings
+      webView.frame = originalParent.bounds
+      webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      // 3. Clean up the hack
       textField.removeFromSuperview()
       self.secureTextField = nil
   }
-
 
    
    // =====================================================
