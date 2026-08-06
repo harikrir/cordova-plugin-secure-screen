@@ -44,15 +44,23 @@ class SecureScreen: CDVPlugin {
 
 // =====================================================
 
-   // Secure View Setup (OutSystems / Cordova Safe Layer Hack)
+   // Secure View Setup (Window-Level / Global Blanket Approach)
+
+   // Inspired by Medium: "Screenshot Prevention in iOS Advanced Techniques"
 
    // =====================================================
 
    private func setupSecureView() {
 
-       guard secureTextField == nil, let webView = self.webView, let parent = webView.superview else { return }
+       // 1. Target the Global Window instead of the Cordova WebView
 
-       // 1. Create the fake password field
+       guard secureTextField == nil, 
+
+             let window = UIApplication.shared.delegate?.window ?? UIApplication.shared.windows.first,
+
+             let rootView = window?.rootViewController?.view else { return }
+
+       // 2. Create the protection text field
 
        let textField = UITextField()
 
@@ -60,27 +68,25 @@ class SecureScreen: CDVPlugin {
 
        textField.backgroundColor = .clear
 
-       textField.textColor = .clear // Hide any dummy text
+       textField.isUserInteractionEnabled = false // Let touches pass to the app
 
-       textField.isUserInteractionEnabled = false // Let touches pass through to OutSystems
+       // 3. Match the exact size of the entire device screen
 
-       // Add a blank space to force iOS to wake up the internal secure canvas
-
-       textField.text = " " 
-
-       // 2. Set it to exactly match the screen size
-
-       textField.frame = parent.bounds
+       textField.frame = rootView.bounds
 
        textField.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
-       // 3. Insert behind the OutSystems webview
+       // 4. Add the text field to the very bottom of the view hierarchy
 
-       parent.insertSubview(textField, belowSubview: webView)
+       rootView.addSubview(textField)
+
+       rootView.sendSubviewToBack(textField)
+
+       // Force the OS to render the internal secure layers
 
        textField.layoutIfNeeded()
 
-       // 4. Find the internal privacy canvas (iOS 15+)
+       // 5. Find the internal secure canvas
 
        guard let secureCanvasView = textField.subviews.first else { 
 
@@ -90,25 +96,21 @@ class SecureScreen: CDVPlugin {
 
        }
 
-       // 5. CRITICAL FIX FOR iOS 17 SCREENSHOT LEAK:
+       // Force the canvas to stretch across the whole screen
 
-       // The internal canvas defaults to the size of the text. If it's too small, iOS 
-
-       // won't blur the whole screen. We MUST force it to physically cover the app!
-
-       secureCanvasView.frame = textField.bounds
+       secureCanvasView.frame = rootView.bounds
 
        secureCanvasView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
-       // 6. THE OUTSYSTEMS HACK:
+       // 6. THE GLOBAL HACK: 
 
-       // We move ONLY the webView's *layer*, not the view itself!
+       // We move the main layer of the *entire app* inside the privacy canvas.
 
-       // Moving the view crashes OutSystems (causing the White Screen).
+       // Because we are doing this at the Root View level, OutSystems' WKWebView is unaffected
 
-       // Moving the layer protects the screen visually while leaving the view hierarchy perfectly intact.
+       // and will never crash or turn white.
 
-       secureCanvasView.layer.addSublayer(webView.layer)
+       secureCanvasView.layer.addSublayer(rootView.layer)
 
        self.secureTextField = textField
 
@@ -116,21 +118,24 @@ class SecureScreen: CDVPlugin {
 
    private func removeSecureView() {
 
-       guard let textField = secureTextField, let webView = self.webView, let parent = webView.superview else { return }
+       guard let textField = secureTextField, 
 
-       // 1. Restore the webView's layer back to its original parent's layer
+             let window = UIApplication.shared.delegate?.window ?? UIApplication.shared.windows.first,
 
-       // This flawlessly reverses the hack without triggering an OutSystems/Cordova reload
+             let rootView = window?.rootViewController?.view else { return }
 
-       parent.layer.addSublayer(webView.layer)
+       // 1. Safely restore the entire app's layer back to the global window
 
-       // 2. Destroy the fake password field
+       window?.layer.addSublayer(rootView.layer)
+
+       // 2. Clean up the fake password field
 
        textField.removeFromSuperview()
 
        self.secureTextField = nil
 
    }
+ 
  
  
  
