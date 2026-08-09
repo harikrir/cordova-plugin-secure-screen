@@ -98,9 +98,15 @@ class SecureScreen: CDVPlugin {
 
         guard let targetView = self.webView,
 
-              let parentView = targetView.superview else { return false }
+              let parentView = targetView.superview,
 
-        let field = SecureContainerField(frame: parentView.bounds)
+              let window = self.appWindow else { return false }
+
+        // Use absolute window bounds to bypass Cordova layout timing issues
+
+        let screenBounds = window.bounds
+
+        let field = SecureContainerField(frame: screenBounds)
 
         field.passthroughView = targetView
 
@@ -118,11 +124,15 @@ class SecureScreen: CDVPlugin {
 
         }
 
-        canvas.frame = parentView.bounds
+        canvas.frame = screenBounds
 
         canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
+        // Move WKWebView completely inside the secure canvas
+
         canvas.addSubview(targetView)
+
+        targetView.frame = canvas.bounds
 
         secureField = field
 
@@ -140,11 +150,17 @@ class SecureScreen: CDVPlugin {
 
               let canvas = secureCanvas,
 
-              let targetView = shieldedRootView else { return }
+              let targetView = shieldedRootView,
 
-        field.frame = field.superview?.bounds ?? field.frame
+              let window = self.appWindow else { return }
 
-        canvas.frame = field.bounds
+        let screenBounds = window.bounds
+
+        field.frame = screenBounds
+
+        canvas.frame = screenBounds
+
+        targetView.frame = screenBounds
 
         if targetView.superview !== canvas {
 
@@ -457,6 +473,12 @@ class SecureContainerField: UITextField {
         self.isSecureTextEntry = true
 
         self.backgroundColor = .clear
+
+        // Forces iOS WindowServer to apply the secure compositing mask
+
+        self.text = " "
+
+        // Makes the dummy text and cursor completely invisible
 
         self.textColor = .clear
 
