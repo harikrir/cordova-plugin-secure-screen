@@ -64,34 +64,35 @@ class SecureScreen: CDVPlugin {
             ?? UIApplication.shared.windows.first
     }
  
- // MARK: - Shield install / validate
+// MARK: - Shield install / validate
    @discardableResult
    private func installShieldIfNeeded() -> Bool {
        if secureField != nil, secureCanvas != nil { return true }
-       // FIX 1: Target the Cordova webView instead of the window's root view.
-       // This stops UIKit from fighting you to re-parent the view during layouts.
-       guard let targetView = self.webView ?? self.viewController?.view,
+       // Target the Cordova webView specifically.
+       guard let targetView = self.webView,
              let parentView = targetView.superview else { return false }
        let field = UITextField()
        field.isSecureTextEntry = true
        field.backgroundColor = .clear
-       field.isUserInteractionEnabled = false
-       // FIX 2: Force the secure canvas to render in modern iOS versions
-       field.text = " "
+       // FIX 1: We MUST leave interaction enabled on the field, otherwise
+       // touches never reach the WebView inside it.
+       field.isUserInteractionEnabled = true
+       // FIX 2: Prevent the keyboard from popping up if the user taps a blank area
+       field.delegate = self
        field.frame = parentView.bounds
        field.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-       // Insert the field into the hierarchy behind the view we want to protect
        parentView.insertSubview(field, belowSubview: targetView)
        field.layoutIfNeeded()
-       // Find the secure canvas
        guard let canvas = field.subviews.first else {
            field.removeFromSuperview()
            return false
        }
+       // FIX 3: Apple disables touch events on this private canvas view by default.
+       // We must force it to true so it forwards your taps down to the Cordova WebView.
+       canvas.isUserInteractionEnabled = true
        canvas.frame = parentView.bounds
        canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-       // FIX 3: Use .addSubview() instead of .layer.addSublayer()
-       // This ensures WKWebView's out-of-process rendering stays inside the mask.
+       // Move the webView into the secure canvas
        canvas.addSubview(targetView)
        secureField = field
        secureCanvas = canvas
@@ -102,10 +103,9 @@ class SecureScreen: CDVPlugin {
        guard let field = secureField,
              let canvas = secureCanvas,
              let targetView = shieldedRootView else { return }
-       // Update frames in case of rotation
-       field.frame = canvas.superview?.bounds ?? field.frame
+       field.frame = field.superview?.bounds ?? field.frame
        canvas.frame = field.bounds
-       // If UIKit or a third-party SDK pulled the view out, put it back
+       // If iOS layout updates try to pull the webview out, put it back
        if targetView.superview !== canvas {
            canvas.addSubview(targetView)
        }
@@ -114,7 +114,7 @@ class SecureScreen: CDVPlugin {
        guard let field = secureField,
              let targetView = shieldedRootView,
              let parentView = field.superview else { return }
-       // Restore the target view to its original location in the UI
+       // Put the Cordova webview back in its original place
        parentView.insertSubview(targetView, aboveSubview: field)
        field.removeFromSuperview()
        secureField = nil
