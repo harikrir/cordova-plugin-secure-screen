@@ -64,68 +64,63 @@ class SecureScreen: CDVPlugin {
             ?? UIApplication.shared.windows.first
     }
  
-    // MARK: - Shield install / validate
- 
-    /// Installs the secure canvas once. Returns false if iOS no longer exposes it.
-    @discardableResult
-    private func installShieldIfNeeded() -> Bool {
-        if secureField != nil, secureCanvas != nil { return true }
- 
-        guard let window = appWindow,
-              let rootView = window.rootViewController?.view else { return false }
- 
-        let field = UITextField()
-        field.isSecureTextEntry = true
-        field.backgroundColor = .clear
-        field.isUserInteractionEnabled = false   // touches pass through to the app
-        field.frame = window.bounds
-        field.autoresizingMask = [.flexibleWidth, .flexibleHeight]
- 
-        // Sits behind everything; only its private canvas is used as a container.
-        window.insertSubview(field, at: 0)
-        field.layoutIfNeeded()
- 
-        guard let canvas = field.subviews.first else {
-            field.removeFromSuperview()
-            return false
-        }
- 
-        canvas.frame = window.bounds
-        canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        canvas.layer.addSublayer(rootView.layer)
- 
-        secureField = field
-        secureCanvas = canvas
-        shieldedRootView = rootView
-        return true
-    }
- 
-    /// Re-asserts frame + layer ownership. UIKit can re-adopt the root layer on
-    /// rotation, foregrounding, or when isSecureTextEntry is toggled.
-    private func revalidateShield() {
-        guard let window = appWindow,
-              let field = secureField,
-              let canvas = secureCanvas,
-              let rootView = shieldedRootView ?? window.rootViewController?.view else { return }
- 
-        field.frame = window.bounds
-        canvas.frame = window.bounds
- 
-        if rootView.layer.superlayer !== canvas.layer {
-            canvas.layer.addSublayer(rootView.layer)
-        }
-    }
- 
-    private func teardownShield() {
-        guard let field = secureField else { return }
-        if let window = appWindow, let rootView = shieldedRootView {
-            window.layer.addSublayer(rootView.layer)
-        }
-        field.removeFromSuperview()
-        secureField = nil
-        secureCanvas = nil
-        shieldedRootView = nil
-    }
+ // MARK: - Shield install / validate
+   @discardableResult
+   private func installShieldIfNeeded() -> Bool {
+       if secureField != nil, secureCanvas != nil { return true }
+       // FIX 1: Target the Cordova webView instead of the window's root view.
+       // This stops UIKit from fighting you to re-parent the view during layouts.
+       guard let targetView = self.webView ?? self.viewController?.view,
+             let parentView = targetView.superview else { return false }
+       let field = UITextField()
+       field.isSecureTextEntry = true
+       field.backgroundColor = .clear
+       field.isUserInteractionEnabled = false
+       // FIX 2: Force the secure canvas to render in modern iOS versions
+       field.text = " "
+       field.frame = parentView.bounds
+       field.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+       // Insert the field into the hierarchy behind the view we want to protect
+       parentView.insertSubview(field, belowSubview: targetView)
+       field.layoutIfNeeded()
+       // Find the secure canvas
+       guard let canvas = field.subviews.first else {
+           field.removeFromSuperview()
+           return false
+       }
+       canvas.frame = parentView.bounds
+       canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+       // FIX 3: Use .addSubview() instead of .layer.addSublayer()
+       // This ensures WKWebView's out-of-process rendering stays inside the mask.
+       canvas.addSubview(targetView)
+       secureField = field
+       secureCanvas = canvas
+       shieldedRootView = targetView
+       return true
+   }
+   private func revalidateShield() {
+       guard let field = secureField,
+             let canvas = secureCanvas,
+             let targetView = shieldedRootView else { return }
+       // Update frames in case of rotation
+       field.frame = canvas.superview?.bounds ?? field.frame
+       canvas.frame = field.bounds
+       // If UIKit or a third-party SDK pulled the view out, put it back
+       if targetView.superview !== canvas {
+           canvas.addSubview(targetView)
+       }
+   }
+   private func teardownShield() {
+       guard let field = secureField,
+             let targetView = shieldedRootView,
+             let parentView = field.superview else { return }
+       // Restore the target view to its original location in the UI
+       parentView.insertSubview(targetView, aboveSubview: field)
+       field.removeFromSuperview()
+       secureField = nil
+       secureCanvas = nil
+       shieldedRootView = nil
+   }
  
     // MARK: - Screenshot protection
  
