@@ -2,19 +2,9 @@ package com.yourplugin.securescreen;
 
 import android.app.Activity;
 
-import android.content.Context;
-
 import android.graphics.Color;
 
-import android.hardware.display.DisplayManager;
-
 import android.os.Build;
-
-import android.os.Handler;
-
-import android.os.Looper;
-
-import android.view.Display;
 
 import android.view.View;
 
@@ -38,13 +28,9 @@ public class SecureScreen extends CordovaPlugin {
 
     // State Tracking
 
-    private boolean isScreenshotProtected = false;             // Specific screens
+    private boolean isScreenshotProtected = false;
 
-    private boolean isScreenRecordingProtectionEnabled = false;  // Global recording block allowed?
-
-    private boolean isScreenRecordingDetected = false;           // Is a recording active?
-
-    private DisplayManager.DisplayListener displayListener;
+    private boolean isScreenRecordingProtectionEnabled = false; 
 
     private CallbackContext screenshotCallbackContext;
 
@@ -100,8 +86,6 @@ public class SecureScreen extends CordovaPlugin {
 
                 isScreenRecordingProtectionEnabled = true;
 
-                setupScreenRecordingDetection(); // Start listening
-
                 updateSecurityFlags(activity);
 
                 callbackContext.success();
@@ -112,8 +96,6 @@ public class SecureScreen extends CordovaPlugin {
 
                 isScreenRecordingProtectionEnabled = false;
 
-                teardownScreenRecordingDetection(); // Stop listening
-
                 updateSecurityFlags(activity);
 
                 callbackContext.success();
@@ -123,8 +105,6 @@ public class SecureScreen extends CordovaPlugin {
             case "registerScreenshotListener":
 
                 screenshotCallbackContext = callbackContext;
-
-                // Android 14+ native screenshot detection API
 
                 if (Build.VERSION.SDK_INT >= 34) {
 
@@ -140,7 +120,7 @@ public class SecureScreen extends CordovaPlugin {
 
                                     PluginResult result = new PluginResult(PluginResult.Status.OK, "screenshot_taken");
 
-                                    result.setKeepCallback(true); // Keep callback alive for multiple screenshots
+                                    result.setKeepCallback(true); 
 
                                     screenshotCallbackContext.sendPluginResult(result);
 
@@ -153,8 +133,6 @@ public class SecureScreen extends CordovaPlugin {
                     });
 
                 }
-
-                // Return NO_RESULT immediately but keep the callback open
 
                 PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
 
@@ -172,19 +150,15 @@ public class SecureScreen extends CordovaPlugin {
 
     }
 
-    /**
-
-     * Resolves the final state of FLAG_SECURE based on both features.
-
-     */
-
     private void updateSecurityFlags(Activity activity) {
 
         if (activity == null) return;
 
         activity.runOnUiThread(() -> {
 
-            boolean shouldSecure = isScreenshotProtected || (isScreenRecordingProtectionEnabled && isScreenRecordingDetected);
+            // If EITHER screenshot OR recording protection is enabled, we MUST apply FLAG_SECURE.
+
+            boolean shouldSecure = isScreenshotProtected || isScreenRecordingProtectionEnabled;
 
             if (shouldSecure) {
 
@@ -199,100 +173,6 @@ public class SecureScreen extends CordovaPlugin {
         });
 
     }
-
-    /**
-
-     * Starts listening for virtual displays (screen recording/casting).
-
-     */
-
-    private void setupScreenRecordingDetection() {
-
-        if (displayListener != null) {
-
-            return; // Already listening
-
-        }
-
-        Activity activity = cordova.getActivity();
-
-        if (activity == null) return;
-
-        DisplayManager displayManager = (DisplayManager) activity.getSystemService(Context.DISPLAY_SERVICE);
-
-        displayListener = new DisplayManager.DisplayListener() {
-
-            @Override
-
-            public void onDisplayAdded(int displayId) { checkDisplays(displayManager); }
-
-            @Override
-
-            public void onDisplayRemoved(int displayId) { checkDisplays(displayManager); }
-
-            @Override
-
-            public void onDisplayChanged(int displayId) { checkDisplays(displayManager); }
-
-        };
-
-        displayManager.registerDisplayListener(displayListener, new Handler(Looper.getMainLooper()));
-
-        checkDisplays(displayManager); // Check immediately in case they are already recording
-
-    }
-
-    /**
-
-     * Stops listening for virtual displays to save resources.
-
-     */
-
-    private void teardownScreenRecordingDetection() {
-
-        Activity activity = cordova.getActivity();
-
-        if (activity != null && displayListener != null) {
-
-            DisplayManager displayManager = (DisplayManager) activity.getSystemService(Context.DISPLAY_SERVICE);
-
-            displayManager.unregisterDisplayListener(displayListener);
-
-            displayListener = null;
-
-        }
-
-        // Reset the detection state when disabled
-
-        isScreenRecordingDetected = false; 
-
-    }
-
-   private void checkDisplays(DisplayManager displayManager) {
-       Activity activity = cordova.getActivity();
-       if (activity == null) return;
-       boolean recordingDetected = false;
-       // 1. Check all standard displays
-       Display[] displays = displayManager.getDisplays();
-       for (Display display : displays) {
-           // If it's not the default display, something is capturing/mirroring the screen
-           if (display.getDisplayId() != Display.DEFAULT_DISPLAY) {
-               recordingDetected = true;
-               break;
-           }
-       }
-       // 2. Check for hidden presentation displays (some OEM recorders hide here)
-       if (!recordingDetected) {
-           Display[] presentationDisplays = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
-           if (presentationDisplays != null && presentationDisplays.length > 0) {
-               recordingDetected = true;
-           }
-       }
-       if (isScreenRecordingDetected != recordingDetected) {
-           isScreenRecordingDetected = recordingDetected;
-           updateSecurityFlags(activity);
-       }
-   }
 
     private void createOverlay(Activity activity) {
 
@@ -349,18 +229,6 @@ public class SecureScreen extends CordovaPlugin {
             overlayView.setVisibility(View.GONE);
 
         }
-
-    }
-
-    @Override
-
-    public void onDestroy() {
-
-        super.onDestroy();
-
-        // Ensure we clean up listeners if the app is force closed
-
-        teardownScreenRecordingDetection();
 
     }
 
