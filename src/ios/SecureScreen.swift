@@ -14,7 +14,7 @@ class SecureScreen: CDVPlugin {
 
     // MARK: - State
 
-    private var secureField: UITextField?
+    private var secureField: SecureContainerField?
 
     private var blurView: UIVisualEffectView?
 
@@ -82,7 +82,7 @@ class SecureScreen: CDVPlugin {
 
     }
 
-    // MARK: - Screenshot Protection (Native Secure Layer Injection)
+    // MARK: - Screenshot Protection (Native Secure View Injection)
 
     @objc(enableScreenshotProtection:)
 
@@ -104,15 +104,15 @@ class SecureScreen: CDVPlugin {
 
             }
 
-            // 1. Create a secure UITextField
+            // 1. Create a custom secure UITextField to handle touches
 
-            let field = UITextField()
+            let field = SecureContainerField()
 
             field.isSecureTextEntry = true
 
             field.backgroundColor = .clear
 
-            field.isUserInteractionEnabled = false // Allow touches to pass through directly to the webview
+            field.targetWebView = webView
 
             // Force rendering of the secure canvas without displaying artifacts
 
@@ -122,23 +122,31 @@ class SecureScreen: CDVPlugin {
 
             field.tintColor = .clear
 
-            // 2. Insert field behind webview as a sibling (Fixes the recursive freeze bug)
+            // 2. Add field to the original view container
 
-            webViewSuperview.insertSubview(field, belowSubview: webView)
+            webViewSuperview.addSubview(field)
 
             field.frame = webView.frame
 
             field.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
-            // 3. Inject the WKWebView's layer directly inside the secure text field's DRM layer.
+            // 3. Find the internal secure canvas view of the UITextField
 
-            if let secureCanvas = field.layer.sublayers?.last {
+            let canvasView = field.subviews.first(where: { String(describing: type(of: $0)).contains("Canvas") }) ?? field.subviews.first
 
-                secureCanvas.addSublayer(webView.layer)
+            // 4. Move WKWebView INTO the canvas view
 
-            } else if let secureCanvasFallback = field.layer.sublayers?.first {
+            // This keeps the View Hierarchy intact for touches, while placing it under the DRM Layer for blank screenshots
 
-                secureCanvasFallback.addSublayer(webView.layer)
+            if let canvas = canvasView {
+
+                canvas.isUserInteractionEnabled = true
+
+                canvas.addSubview(webView)
+
+                webView.frame = canvas.bounds
+
+                webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
             }
 
@@ -164,7 +172,7 @@ class SecureScreen: CDVPlugin {
 
                   let webView = self.webView, 
 
-                  let webViewSuperview = webView.superview else {
+                  let originalSuperview = field.superview else {
 
                 let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "UNPROTECTED")
 
@@ -174,13 +182,13 @@ class SecureScreen: CDVPlugin {
 
             }
 
-            // 1. Restore the webView's layer to its original superlayer 
+            // 1. Restore the webView back to the original container
 
-            webViewSuperview.layer.addSublayer(webView.layer)
+            originalSuperview.addSubview(webView)
 
-            // 2. Clean up the text field
+            webView.frame = field.frame
 
-            field.layer.removeFromSuperlayer()
+            // 2. Clean up the secure text field
 
             field.removeFromSuperview()
 
@@ -369,6 +377,46 @@ class SecureScreen: CDVPlugin {
     @objc private func removeBlur() {
 
         blurView?.removeFromSuperview()
+
+    }
+
+}
+
+// MARK: - Custom Touch Routing Field
+
+class SecureContainerField: UITextField {
+
+    weak var targetWebView: UIView?
+
+    // Prevents the keyboard from ever popping up
+
+    override var canBecomeFirstResponder: Bool { false }
+
+    // Bypasses the TextField's internal touch logic and routes taps directly to the Web View
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+
+        guard let webView = targetWebView else {
+
+            return super.hitTest(point, with: event)
+
+        }
+
+        let convertedPoint = self.convert(point, to: webView)
+
+        // If the tap happens over the web app, let the web app handle it
+
+        if webView.bounds.contains(convertedPoint) {
+
+            if let hitView = webView.hitTest(convertedPoint, with: event) {
+
+                return hitView
+
+            }
+
+        }
+
+        return super.hitTest(point, with: event)
 
     }
 
