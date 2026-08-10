@@ -1,582 +1,185 @@
 import UIKit
-
 import WebKit
-
 /**
-
 * SecureScreen — Cordova plugin (iOS)
-
 */
-
 @objc(SecureScreen)
-
 class SecureScreen: CDVPlugin {
-
-// MARK: - State
-
-private var secureField: SecureContainerField?
-
-private weak var secureCanvas: UIView?
-
-private weak var shieldedRootView: UIView?
-
-private var blurView: UIVisualEffectView?
-
-private var overlayView: UIView?
-
-private var screenshotProtectionEnabled = false
-
-private var recordingProtectionEnabled = false
-
-private var appSwitcherBlurEnabled = false
-
-private var screenshotCallbackId: String?
-
-// MARK: - Lifecycle
-
-override func pluginInitialize() {
-
-let nc = NotificationCenter.default
-
-nc.addObserver(self, selector: #selector(screenshotTaken),
-
-name: UIApplication.userDidTakeScreenshotNotification, object: nil)
-
-nc.addObserver(self, selector: #selector(screenCaptureChanged),
-
-name: UIScreen.capturedDidChangeNotification, object: nil)
-
-nc.addObserver(self, selector: #selector(handleWillResignActive),
-
-name: UIApplication.willResignActiveNotification, object: nil)
-
-nc.addObserver(self, selector: #selector(handleDidBecomeActive),
-
-name: UIApplication.didBecomeActiveNotification, object: nil)
-
-nc.addObserver(self, selector: #selector(handleLayoutChange),
-
-name: UIDevice.orientationDidChangeNotification, object: nil)
-
+   // MARK: - State
+   private var secureField: UITextField?
+   private var blurView: UIVisualEffectView?
+   private var screenshotProtectionEnabled = false
+   private var recordingProtectionEnabled = false
+   private var appSwitcherBlurEnabled = false
+   private var screenshotCallbackId: String?
+   // MARK: - Lifecycle
+   override func pluginInitialize() {
+       let nc = NotificationCenter.default
+       nc.addObserver(self, selector: #selector(screenshotTaken),
+                      name: UIApplication.userDidTakeScreenshotNotification, object: nil)
+       nc.addObserver(self, selector: #selector(screenCaptureChanged),
+                      name: UIScreen.capturedDidChangeNotification, object: nil)
+       nc.addObserver(self, selector: #selector(handleWillResignActive),
+                      name: UIApplication.willResignActiveNotification, object: nil)
+       nc.addObserver(self, selector: #selector(handleDidBecomeActive),
+                      name: UIApplication.didBecomeActiveNotification, object: nil)
+   }
+   deinit {
+       NotificationCenter.default.removeObserver(self)
+   }
+   // MARK: - Window Helper
+   private var appWindow: UIWindow? {
+       if #available(iOS 13.0, *) {
+           let windows = UIApplication.shared.connectedScenes
+               .compactMap { $0 as? UIWindowScene }
+               .sorted { $0.activationState.rawValue < $1.activationState.rawValue }
+               .flatMap { $0.windows }
+           if let key = windows.first(where: { $0.isKeyWindow }) { return key }
+           if let first = windows.first { return first }
+       }
+       return UIApplication.shared.windows.first(where: { $0.isKeyWindow })
+           ?? UIApplication.shared.windows.first
+   }
+   // MARK: - Screenshot Protection (Native Secure Layer Injection)
+   @objc(enableScreenshotProtection:)
+   func enableScreenshotProtection(command: CDVInvokedUrlCommand) {
+       DispatchQueue.main.async {
+           guard let webView = self.webView,
+                 let webViewSuperview = webView.superview,
+                 self.secureField == nil else {
+               let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "ALREADY_PROTECTED")
+               self.commandDelegate.send(result, callbackId: command.callbackId)
+               return
+           }
+           // 1. Create a secure UITextField
+           let field = UITextField()
+           field.isSecureTextEntry = true
+           field.isUserInteractionEnabled = false // Allow touches to pass through
+           // 2. Add field to the same parent as webview
+           webViewSuperview.addSubview(field)
+           field.frame = webView.frame
+           field.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+           // 3. Inject the WKWebView's layer directly inside the secure text field's DRM layer.
+           // In iOS 17+, the secure canvas is typically the .last sublayer. In older iOS, it is .first.
+           if let secureCanvas = field.layer.sublayers?.last {
+               secureCanvas.addSublayer(webView.layer)
+           } else if let secureCanvasFallback = field.layer.sublayers?.first {
+               secureCanvasFallback.addSublayer(webView.layer)
+           }
+           self.secureField = field
+           self.screenshotProtectionEnabled = true
+           let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "PROTECTED")
+           self.commandDelegate.send(result, callbackId: command.callbackId)
+       }
+   }
+   @objc(disableScreenshotProtection:)
+   func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
+       DispatchQueue.main.async {
+           guard let field = self.secureField,
+                 let webView = self.webView,
+                 let webViewSuperview = webView.superview else {
+               let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "UNPROTECTED")
+               self.commandDelegate.send(result, callbackId: command.callbackId)
+               return
+           }
+           // 1. Restore the webView's layer to its original superlayer (the parent container)
+           webViewSuperview.layer.addSublayer(webView.layer)
+           // 2. Clean up the text field
+           field.layer.removeFromSuperlayer()
+           field.removeFromSuperview()
+           self.secureField = nil
+           self.screenshotProtectionEnabled = false
+           let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "UNPROTECTED")
+           self.commandDelegate.send(result, callbackId: command.callbackId)
+       }
+   }
+   @objc(destroyScreenshotProtection:)
+   func destroyScreenshotProtection(command: CDVInvokedUrlCommand) {
+       disableScreenshotProtection(command: command)
+   }
+   // MARK: - Listeners & Callbacks
+   @objc(registerScreenshotListener:)
+   func registerScreenshotListener(command: CDVInvokedUrlCommand) {
+       if let old = screenshotCallbackId, old != command.callbackId {
+           let done = CDVPluginResult(status: CDVCommandStatus_NO_RESULT)
+           commandDelegate.send(done, callbackId: old)
+       }
+       screenshotCallbackId = command.callbackId
+       let result = CDVPluginResult(status: CDVCommandStatus_NO_RESULT)
+       result?.setKeepCallbackAs(true)
+       commandDelegate.send(result, callbackId: command.callbackId)
+   }
+   @objc private func screenshotTaken() {
+       guard screenshotProtectionEnabled, let callbackId = screenshotCallbackId else { return }
+       // Notify JS Listener. Native iOS masking handles the blanking automatically now.
+       let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "SCREENSHOT_DETECTED")
+       result?.setKeepCallbackAs(true)
+       commandDelegate.send(result, callbackId: callbackId)
+   }
+   // MARK: - Screen Recording Protection
+   @objc(enableScreenRecordingProtection:)
+   func enableScreenRecordingProtection(command: CDVInvokedUrlCommand) {
+       DispatchQueue.main.async {
+           self.recordingProtectionEnabled = true
+           if UIScreen.main.isCaptured { self.addBlur() }
+           let result = CDVPluginResult(status: CDVCommandStatus_OK)
+           self.commandDelegate.send(result, callbackId: command.callbackId)
+       }
+   }
+   @objc(disableScreenRecordingProtection:)
+   func disableScreenRecordingProtection(command: CDVInvokedUrlCommand) {
+       DispatchQueue.main.async {
+           self.recordingProtectionEnabled = false
+           self.removeBlur()
+           let result = CDVPluginResult(status: CDVCommandStatus_OK)
+           self.commandDelegate.send(result, callbackId: command.callbackId)
+       }
+   }
+   @objc private func screenCaptureChanged() {
+       guard recordingProtectionEnabled else { return }
+       DispatchQueue.main.async {
+           UIScreen.main.isCaptured ? self.addBlur() : self.removeBlur()
+       }
+   }
+   // MARK: - App Switcher Blur
+   @objc(enableAppSwitcherBlur:)
+   func enableAppSwitcherBlur(command: CDVInvokedUrlCommand) {
+       appSwitcherBlurEnabled = true
+       let result = CDVPluginResult(status: CDVCommandStatus_OK)
+       commandDelegate.send(result, callbackId: command.callbackId)
+   }
+   @objc(disableAppSwitcherBlur:)
+   func disableAppSwitcherBlur(command: CDVInvokedUrlCommand) {
+       appSwitcherBlurEnabled = false
+       DispatchQueue.main.async { self.removeBlur() }
+       let result = CDVPluginResult(status: CDVCommandStatus_OK)
+       commandDelegate.send(result, callbackId: command.callbackId)
+   }
+   @objc private func handleWillResignActive() {
+       guard appSwitcherBlurEnabled else { return }
+       addBlur()
+   }
+   @objc private func handleDidBecomeActive() {
+       if !(recordingProtectionEnabled && UIScreen.main.isCaptured) {
+           removeBlur()
+       }
+   }
+   // MARK: - Blur Utilities
+   @objc private func addBlur() {
+       guard let window = appWindow else { return }
+       if blurView == nil {
+           let blur = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
+           blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+           blurView = blur
+       }
+       guard let blur = blurView else { return }
+       blur.frame = window.bounds
+       if blur.superview !== window {
+           window.addSubview(blur)
+       }
+       window.bringSubviewToFront(blur)
+   }
+   @objc private func removeBlur() {
+       blurView?.removeFromSuperview()
+   }
 }
-
-deinit {
-
-NotificationCenter.default.removeObserver(self)
-
-}
-
-// MARK: - Window Helper (Scene-aware)
-
-private var appWindow: UIWindow? {
-
-if #available(iOS 13.0, *) {
-
-let windows = UIApplication.shared.connectedScenes
-
-.compactMap { $0 as? UIWindowScene }
-
-.sorted { $0.activationState.rawValue < $1.activationState.rawValue }
-
-.flatMap { $0.windows }
-
-if let key = windows.first(where: { $0.isKeyWindow }) { return key }
-
-if let first = windows.first { return first }
-
-}
-
-return UIApplication.shared.windows.first(where: { $0.isKeyWindow })
-
-?? UIApplication.shared.windows.first
-
-}
-
-// MARK: - Shield Install / Validate
-
-@discardableResult
-
-private func installShieldIfNeeded() -> Bool {
-
-if secureField != nil, secureCanvas != nil { return true }
-
-guard let targetView = self.webView,
-
-let parentView = targetView.superview,
-
-let window = self.appWindow else { return false }
-
-let screenBounds = window.bounds
-
-let field = SecureContainerField(frame: screenBounds)
-
-field.passthroughView = targetView
-
-field.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-
-parentView.insertSubview(field, belowSubview: targetView)
-
-field.layoutIfNeeded()
-
-guard let canvas = field.subviews.first else {
-
-field.removeFromSuperview()
-
-return false
-
-}
-
-canvas.frame = screenBounds
-
-canvas.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-
-// Move WKWebView completely inside the secure canvas
-
-canvas.addSubview(targetView)
-
-targetView.frame = canvas.bounds
-
-secureField = field
-
-secureCanvas = canvas
-
-shieldedRootView = targetView
-
-return true
-
-}
-
-private func revalidateShield() {
-
-guard let field = secureField,
-
-let canvas = secureCanvas,
-
-let targetView = shieldedRootView,
-
-let window = self.appWindow else { return }
-
-let screenBounds = window.bounds
-
-field.frame = screenBounds
-
-canvas.frame = screenBounds
-
-targetView.frame = screenBounds
-
-if targetView.superview !== canvas {
-
-canvas.addSubview(targetView)
-
-}
-
-}
-
-private func teardownShield() {
-
-guard let field = secureField, 
-
-let targetView = shieldedRootView,
-
-let parentView = field.superview else { return }
-
-parentView.insertSubview(targetView, aboveSubview: field)
-
-field.removeFromSuperview()
-
-secureField = nil
-
-secureCanvas = nil
-
-shieldedRootView = nil
-
-}
-
-// MARK: - Screenshot Protection
-
-@objc(enableScreenshotProtection:)
-
-func enableScreenshotProtection(command: CDVInvokedUrlCommand) {
-
-DispatchQueue.main.async {
-
-let installed = self.installShieldIfNeeded()
-
-if installed {
-
-self.secureField?.isSecureTextEntry = true
-
-self.revalidateShield()
-
-}
-
-self.screenshotProtectionEnabled = installed
-
-let result = CDVPluginResult(
-
-status: installed ? CDVCommandStatus_OK : CDVCommandStatus_ERROR,
-
-messageAs: installed ? "PROTECTED" : "SHIELD_UNAVAILABLE"
-
-)
-
-self.commandDelegate.send(result, callbackId: command.callbackId)
-
-}
-
-}
-
-@objc(disableScreenshotProtection:)
-
-func disableScreenshotProtection(command: CDVInvokedUrlCommand) {
-
-DispatchQueue.main.async {
-
-self.screenshotProtectionEnabled = false
-
-self.secureField?.isSecureTextEntry = false
-
-self.revalidateShield()
-
-let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "UNPROTECTED")
-
-self.commandDelegate.send(result, callbackId: command.callbackId)
-
-}
-
-}
-
-@objc(destroyScreenshotProtection:)
-
-func destroyScreenshotProtection(command: CDVInvokedUrlCommand) {
-
-DispatchQueue.main.async {
-
-self.screenshotProtectionEnabled = false
-
-self.teardownShield()
-
-let result = CDVPluginResult(status: CDVCommandStatus_OK)
-
-self.commandDelegate.send(result, callbackId: command.callbackId)
-
-}
-
-}
-
-// MARK: - Listeners & Callbacks
-
-@objc(registerScreenshotListener:)
-
-func registerScreenshotListener(command: CDVInvokedUrlCommand) {
-
-if let old = screenshotCallbackId, old != command.callbackId {
-
-let done = CDVPluginResult(status: CDVCommandStatus_NO_RESULT)
-
-commandDelegate.send(done, callbackId: old)
-
-}
-
-screenshotCallbackId = command.callbackId
-
-let result = CDVPluginResult(status: CDVCommandStatus_NO_RESULT)
-
-result?.setKeepCallbackAs(true)
-
-commandDelegate.send(result, callbackId: command.callbackId)
-
-}
-
-@objc private func screenshotTaken() {
-
-guard screenshotProtectionEnabled else { return }
-
-// Instant blank-out overlay during screen capture buffer write
-
-DispatchQueue.main.async {
-
-self.showBlankOverlay()
-
-DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-
-if !(self.recordingProtectionEnabled && UIScreen.main.isCaptured) {
-
-self.hideBlankOverlay()
-
-}
-
-}
-
-}
-
-// Notify JS Listener
-
-if let callbackId = screenshotCallbackId {
-
-let result = CDVPluginResult(status: CDVCommandStatus_OK, messageAs: "SCREENSHOT_DETECTED")
-
-result?.setKeepCallbackAs(true)
-
-commandDelegate.send(result, callbackId: callbackId)
-
-}
-
-}
-
-// MARK: - Screen Recording Protection
-
-@objc(enableScreenRecordingProtection:)
-
-func enableScreenRecordingProtection(command: CDVInvokedUrlCommand) {
-
-DispatchQueue.main.async {
-
-self.recordingProtectionEnabled = true
-
-if UIScreen.main.isCaptured { self.addBlur() }
-
-let result = CDVPluginResult(status: CDVCommandStatus_OK)
-
-self.commandDelegate.send(result, callbackId: command.callbackId)
-
-}
-
-}
-
-@objc(disableScreenRecordingProtection:)
-
-func disableScreenRecordingProtection(command: CDVInvokedUrlCommand) {
-
-DispatchQueue.main.async {
-
-self.recordingProtectionEnabled = false
-
-self.removeBlur()
-
-let result = CDVPluginResult(status: CDVCommandStatus_OK)
-
-self.commandDelegate.send(result, callbackId: command.callbackId)
-
-}
-
-}
-
-@objc private func screenCaptureChanged() {
-
-guard recordingProtectionEnabled else { return }
-
-DispatchQueue.main.async {
-
-UIScreen.main.isCaptured ? self.addBlur() : self.removeBlur()
-
-}
-
-}
-
-// MARK: - App Switcher Blur
-
-@objc(enableAppSwitcherBlur:)
-
-func enableAppSwitcherBlur(command: CDVInvokedUrlCommand) {
-
-appSwitcherBlurEnabled = true
-
-let result = CDVPluginResult(status: CDVCommandStatus_OK)
-
-commandDelegate.send(result, callbackId: command.callbackId)
-
-}
-
-@objc(disableAppSwitcherBlur:)
-
-func disableAppSwitcherBlur(command: CDVInvokedUrlCommand) {
-
-appSwitcherBlurEnabled = false
-
-DispatchQueue.main.async { self.removeBlur() }
-
-let result = CDVPluginResult(status: CDVCommandStatus_OK)
-
-commandDelegate.send(result, callbackId: command.callbackId)
-
-}
-
-@objc private func handleWillResignActive() {
-
-guard appSwitcherBlurEnabled else { return }
-
-addBlur()
-
-}
-
-@objc private func handleDidBecomeActive() {
-
-revalidateShield()
-
-if !(recordingProtectionEnabled && UIScreen.main.isCaptured) {
-
-removeBlur()
-
-}
-
-}
-
-@objc private func handleLayoutChange() {
-
-DispatchQueue.main.async {
-
-self.revalidateShield()
-
-if let window = self.appWindow { 
-
-self.blurView?.frame = window.bounds 
-
-self.overlayView?.frame = window.bounds
-
-}
-
-}
-
-}
-
-// MARK: - Overlay & Blur Utilities
-
-private func showBlankOverlay() {
-
-guard let window = appWindow, overlayView == nil else { return }
-
-let blank = UIView(frame: window.bounds)
-
-blank.backgroundColor = .white
-
-blank.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-
-window.addSubview(blank)
-
-window.bringSubviewToFront(blank)
-
-self.overlayView = blank
-
-}
-
-private func hideBlankOverlay() {
-
-overlayView?.removeFromSuperview()
-
-overlayView = nil
-
-}
-
-@objc private func addBlur() {
-
-guard let window = appWindow else { return }
-
-if blurView == nil {
-
-let blur = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
-
-blur.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-
-blurView = blur
-
-}
-
-guard let blur = blurView else { return }
-
-blur.frame = window.bounds
-
-if blur.superview !== window {
-
-window.addSubview(blur)
-
-}
-
-window.bringSubviewToFront(blur)
-
-}
-
-@objc private func removeBlur() {
-
-blurView?.removeFromSuperview()
-
-}
-
-}
-
-// MARK: - Secure Container Field
-
-class SecureContainerField: UITextField {
-
-weak var passthroughView: UIView?
-
-override init(frame: CGRect) {
-
-super.init(frame: frame)
-
-setup()
-
-}
-
-required init?(coder: NSCoder) {
-
-super.init(coder: coder)
-
-setup()
-
-}
-
-private func setup() {
-
-self.isSecureTextEntry = true
-
-self.backgroundColor = .clear
-
-// Forces iOS WindowServer to apply the secure compositing mask
-
-self.text = " "
-
-// Makes the dummy text and cursor completely invisible
-
-self.textColor = .clear
-
-self.tintColor = .clear 
-
-self.isUserInteractionEnabled = true 
-
-}
-
-override var canBecomeFirstResponder: Bool {
-
-return false
-
-}
-
-override func becomeFirstResponder() -> Bool {
-
-return false
-
-}
-
-override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-
-guard let target = passthroughView else {
-
-return super.hitTest(point, with: event)
-
-}
-
-let convertedPoint = self.convert(point, to: target)
-
-if let hitView = target.hitTest(convertedPoint, with: event) {
-
-return hitView
-
-}
-
-return super.hitTest(point, with: event)
-
-}
-
-}
- 
