@@ -64,13 +64,14 @@ public class SecureScreen extends CordovaPlugin {
 
             case "enableAppSwitcherBlur":
 
-                blurEnabled = true;
+               blurEnabled = true;
 
-                activity.runOnUiThread(() -> createOverlay(activity));
+    activity.runOnUiThread(() -> {
+        createOverlay(activity);
+    });
 
-                callbackContext.success();
-
-                return true;
+    callbackContext.success();
+    return true;
 
             case "disableAppSwitcherBlur":
 
@@ -176,23 +177,25 @@ public class SecureScreen extends CordovaPlugin {
 
     private void createOverlay(Activity activity) {
 
-        if (overlayView != null) return;
+          if (overlayView != null) return;
 
-        overlayView = new View(activity);
+    FrameLayout rootView =
+            (FrameLayout) activity.getWindow().getDecorView();
 
-        overlayView.setBackgroundColor(Color.WHITE);
+    overlayView = new View(activity);
+    overlayView.setBackgroundColor(Color.WHITE);
 
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT
+    );
 
-                FrameLayout.LayoutParams.MATCH_PARENT,
+    rootView.addView(overlayView, params);
 
-                FrameLayout.LayoutParams.MATCH_PARENT
-
-        );
-
-        activity.addContentView(overlayView, params);
-
-        overlayView.setVisibility(View.GONE);
+    overlayView.bringToFront();
+    overlayView.setClickable(false);
+    overlayView.setFocusable(false);
+    overlayView.setVisibility(View.GONE);
 
     }
 
@@ -212,11 +215,13 @@ public class SecureScreen extends CordovaPlugin {
 
     public void onPause(boolean multitasking) {
 
-        if (blurEnabled && overlayView != null) {
+          if (blurEnabled && overlayView != null) {
 
+        cordova.getActivity().runOnUiThread(() -> {
+            overlayView.bringToFront();
             overlayView.setVisibility(View.VISIBLE);
-
-        }
+        });
+    }
 
     }
 
@@ -224,11 +229,12 @@ public class SecureScreen extends CordovaPlugin {
 
     public void onResume(boolean multitasking) {
 
-        if (overlayView != null) {
+       if (overlayView != null) {
 
+        cordova.getActivity().runOnUiThread(() -> {
             overlayView.setVisibility(View.GONE);
-
-        }
+        });
+    }
 
     }
 
