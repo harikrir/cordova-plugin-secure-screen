@@ -1,41 +1,31 @@
 package com.yourplugin.securescreen;
 
 import android.app.Activity;
-
 import android.graphics.Color;
-
 import android.os.Build;
-
+import android.util.Log;
 import android.view.View;
-
 import android.view.WindowManager;
-
 import android.widget.FrameLayout;
 
 import org.apache.cordova.CallbackContext;
-
 import org.apache.cordova.CordovaPlugin;
-
 import org.apache.cordova.PluginResult;
-
 import org.json.JSONArray;
 
 public class SecureScreen extends CordovaPlugin {
 
+    private static final String TAG = "SecureScreen";
+
     private View overlayView;
 
     private boolean blurEnabled = false;
-
-    // State Tracking
-
     private boolean isScreenshotProtected = false;
-
-    private boolean isScreenRecordingProtectionEnabled = false; 
+    private boolean isScreenRecordingProtectionEnabled = false;
 
     private CallbackContext screenshotCallbackContext;
 
     @Override
-
     public boolean execute(String action, JSONArray args, CallbackContext callbackContext) {
 
         Activity activity = cordova.getActivity();
@@ -43,64 +33,45 @@ public class SecureScreen extends CordovaPlugin {
         switch (action) {
 
             case "enableScreenshotProtection":
-
                 isScreenshotProtected = true;
-
                 updateSecurityFlags(activity);
-
                 callbackContext.success();
-
                 return true;
 
             case "disableScreenshotProtection":
-
                 isScreenshotProtected = false;
-
                 updateSecurityFlags(activity);
-
                 callbackContext.success();
+                return true;
 
+            case "enableScreenRecordingProtection":
+                isScreenRecordingProtectionEnabled = true;
+                updateSecurityFlags(activity);
+                callbackContext.success();
+                return true;
+
+            case "disableScreenRecordingProtection":
+                isScreenRecordingProtectionEnabled = false;
+                updateSecurityFlags(activity);
+                callbackContext.success();
                 return true;
 
             case "enableAppSwitcherBlur":
+                blurEnabled = true;
 
-               blurEnabled = true;
+                activity.runOnUiThread(() -> {
+                    createOverlay(activity);
+                });
 
-    activity.runOnUiThread(() -> {
-        createOverlay(activity);
-    });
-
-    callbackContext.success();
-    return true;
+                callbackContext.success();
+                return true;
 
             case "disableAppSwitcherBlur":
-
                 blurEnabled = false;
 
                 activity.runOnUiThread(this::removeOverlay);
 
                 callbackContext.success();
-
-                return true;
-
-            case "enableScreenRecordingProtection":
-
-                isScreenRecordingProtectionEnabled = true;
-
-                updateSecurityFlags(activity);
-
-                callbackContext.success();
-
-                return true;
-
-            case "disableScreenRecordingProtection":
-
-                isScreenRecordingProtectionEnabled = false;
-
-                updateSecurityFlags(activity);
-
-                callbackContext.success();
-
                 return true;
 
             case "registerScreenshotListener":
@@ -112,30 +83,28 @@ public class SecureScreen extends CordovaPlugin {
                     activity.runOnUiThread(() -> {
 
                         activity.registerScreenCaptureCallback(
+                                activity.getMainExecutor(),
+                                () -> {
 
-                            activity.getMainExecutor(),
+                                    if (screenshotCallbackContext != null) {
 
-                            () -> {
+                                        PluginResult result =
+                                                new PluginResult(
+                                                        PluginResult.Status.OK,
+                                                        "screenshot_taken"
+                                                );
 
-                                if (screenshotCallbackContext != null) {
+                                        result.setKeepCallback(true);
 
-                                    PluginResult result = new PluginResult(PluginResult.Status.OK, "screenshot_taken");
-
-                                    result.setKeepCallback(true); 
-
-                                    screenshotCallbackContext.sendPluginResult(result);
-
-                                }
-
-                            }
-
-                        );
-
+                                        screenshotCallbackContext
+                                                .sendPluginResult(result);
+                                    }
+                                });
                     });
-
                 }
 
-                PluginResult pluginResult = new PluginResult(PluginResult.Status.NO_RESULT);
+                PluginResult pluginResult =
+                        new PluginResult(PluginResult.Status.NO_RESULT);
 
                 pluginResult.setKeepCallback(true);
 
@@ -144,99 +113,142 @@ public class SecureScreen extends CordovaPlugin {
                 return true;
 
             default:
-
                 return false;
-
         }
-
     }
 
     private void updateSecurityFlags(Activity activity) {
 
-        if (activity == null) return;
+        if (activity == null) {
+            return;
+        }
 
         activity.runOnUiThread(() -> {
 
-            // If EITHER screenshot OR recording protection is enabled, we MUST apply FLAG_SECURE.
-
-            boolean shouldSecure = isScreenshotProtected || isScreenRecordingProtectionEnabled;
+            boolean shouldSecure =
+                    isScreenshotProtected
+                            || isScreenRecordingProtectionEnabled;
 
             if (shouldSecure) {
 
-                activity.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+                activity.getWindow().addFlags(
+                        WindowManager.LayoutParams.FLAG_SECURE);
 
             } else {
 
-                activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
-
+                activity.getWindow().clearFlags(
+                        WindowManager.LayoutParams.FLAG_SECURE);
             }
-
         });
-
     }
 
     private void createOverlay(Activity activity) {
 
-          if (overlayView != null) return;
+        if (overlayView != null) {
+            return;
+        }
 
-    FrameLayout rootView =
-            (FrameLayout) activity.getWindow().getDecorView();
+        FrameLayout rootView =
+                activity.findViewById(android.R.id.content);
 
-    overlayView = new View(activity);
-    overlayView.setBackgroundColor(Color.WHITE);
+        if (rootView == null) {
+            return;
+        }
 
-    FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT
-    );
+        overlayView = new FrameLayout(activity);
 
-    rootView.addView(overlayView, params);
+        // Change to BLACK if preferred
+        overlayView.setBackgroundColor(Color.WHITE);
 
-    overlayView.bringToFront();
-    overlayView.setClickable(false);
-    overlayView.setFocusable(false);
-    overlayView.setVisibility(View.GONE);
+        FrameLayout.LayoutParams params =
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                );
 
+        rootView.addView(overlayView, params);
+
+        overlayView.bringToFront();
+        overlayView.setClickable(false);
+        overlayView.setFocusable(false);
+        overlayView.setVisibility(View.GONE);
+
+        Log.d(TAG, "Overlay created");
     }
 
     private void removeOverlay() {
 
-        if (overlayView != null && overlayView.getParent() instanceof FrameLayout) {
+        if (overlayView != null
+                && overlayView.getParent() instanceof FrameLayout) {
 
-            ((FrameLayout) overlayView.getParent()).removeView(overlayView);
+            ((FrameLayout) overlayView.getParent())
+                    .removeView(overlayView);
 
             overlayView = null;
 
+            Log.d(TAG, "Overlay removed");
+        }
+    }
+
+    private void showOverlay() {
+
+        if (!blurEnabled || overlayView == null) {
+            return;
         }
 
+        cordova.getActivity().runOnUiThread(() -> {
+
+            overlayView.setVisibility(View.VISIBLE);
+            overlayView.bringToFront();
+
+            overlayView.invalidate();
+            overlayView.requestLayout();
+
+            Log.d(TAG, "Overlay visible");
+        });
+    }
+
+    private void hideOverlay() {
+
+        if (overlayView == null) {
+            return;
+        }
+
+        cordova.getActivity().runOnUiThread(() -> {
+
+            overlayView.setVisibility(View.GONE);
+
+            Log.d(TAG, "Overlay hidden");
+        });
     }
 
     @Override
-
     public void onPause(boolean multitasking) {
 
-          if (blurEnabled && overlayView != null) {
+        super.onPause(multitasking);
 
-        cordova.getActivity().runOnUiThread(() -> {
-            overlayView.bringToFront();
-            overlayView.setVisibility(View.VISIBLE);
-        });
-    }
+        Log.d(TAG, "onPause");
 
+        showOverlay();
     }
 
     @Override
+    public void onStop() {
 
+        super.onStop();
+
+        Log.d(TAG, "onStop");
+
+        showOverlay();
+    }
+
+    @Override
     public void onResume(boolean multitasking) {
 
-       if (overlayView != null) {
+        super.onResume(multitasking);
 
-        cordova.getActivity().runOnUiThread(() -> {
-            overlayView.setVisibility(View.GONE);
-        });
+        Log.d(TAG, "onResume");
+
+        hideOverlay();
     }
-
-    }
-
 }
- 
